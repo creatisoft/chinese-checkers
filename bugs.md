@@ -1,0 +1,4 @@
+- white player seems to win automatically, logic?
+- unique colors for every area of the board, all six sides 
+- remove animation entirely from the game board?  ( area around board , )
+- crashes after player selects white 2 > players 
