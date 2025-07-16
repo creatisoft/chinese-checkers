@@ -52,72 +52,11 @@ class ChineseCheckersGame {
     }
 
     setupPlayerConfig() {
-        this.activePlayers = [this.humanPlayerIndex];
-        let opponents = [];
-
-        // Determine opponent positions based on number of players for a balanced game
-        switch (this.numPlayers) {
-            case 2:
-                opponents = [(this.humanPlayerIndex + 3) % 6];
-                break;
-            case 3:
-                opponents = [
-                    (this.humanPlayerIndex + 2) % 6,
-                    (this.humanPlayerIndex + 4) % 6
-                ];
-                break;
-            case 4:
-                // 4-player uses two opposing pairs. Find the pair the human is in, and add the other pair.
-                const pair1 = [0, 3]; // Blue, Yellow
-                const pair2 = [1, 5]; // White, Red
-                const pair3 = [2, 4]; // Green, Black
-                
-                if (pair1.includes(this.humanPlayerIndex)) opponents = [ ...pair2, ...pair3 ];
-                else if (pair2.includes(this.humanPlayerIndex)) opponents = [ ...pair1, ...pair3 ];
-                else opponents = [ ...pair1, ...pair2 ];
-                
-                // We only need 3 opponents, not 4. Let's use a standard 4p layout relative to the player
-                const humanOpposite = (this.humanPlayerIndex + 3) % 6;
-                const p1 = (this.humanPlayerIndex + 1) % 6;
-                const p2 = (this.humanPlayerIndex - 1 + 6) % 6;
-                if (p1 !== humanOpposite && p2 !== humanOpposite) {
-                    // A non-standard 4 player setup. Let's use adjacent pairs.
-                    opponents = [
-                        (this.humanPlayerIndex + 1) % 6,
-                        (this.humanPlayerIndex + 2) % 6,
-                        (this.humanPlayerIndex + 3) % 6,
-                    ].filter(p => p !== this.humanPlayerIndex).slice(0,3);
-                     // This is not standard, let's stick to a better 4p logic.
-                     // Standard 4p is two pairs of opposites. We will use one pair and one player from another.
-                     // Let's use a simpler logic: two adjacent players and the one opposite.
-                     opponents = [
-                         (this.humanPlayerIndex + 1) % 6,
-                         (this.humanPlayerIndex - 1 + 6) % 6,
-                         (this.humanPlayerIndex + 3) % 6
-                     ];
-                }
-                // Let's use the standard 4-player config: two pairs of opposite players
-                // Red & Green vs Black & White is a common one.
-                // We'll use the human's color and their opposite, and one other opposite pair.
-                const opposite = (this.humanPlayerIndex + 3) % 6;
-                let otherPairLead = 0;
-                while(otherPairLead === this.humanPlayerIndex || otherPairLead === opposite) {
-                    otherPairLead++;
-                }
-                opponents = [opposite, otherPairLead, (otherPairLead + 3) % 6];
-                break;
-            case 6:
-                opponents = [0, 1, 2, 3, 4, 5].filter(p => p !== this.humanPlayerIndex);
-                break;
+        // For multiple players, use positions 0, 1, 2, etc. sequentially  
+        this.activePlayers = [];
+        for (let i = 0; i < this.numPlayers; i++) {
+            this.activePlayers.push(i);
         }
-        
-        // Shuffle opponents for random turn order after the human
-        for (let i = opponents.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [opponents[i], opponents[j]] = [opponents[j], opponents[i]];
-        }
-
-        this.activePlayers.push(...opponents);
         this.currentPlayerIndex = 0; // Human player always starts
     }
 
@@ -130,18 +69,39 @@ class ChineseCheckersGame {
                 }
             }
         }
+
+        // Map board positions based on number of players
+        const playerPositions = this.getPlayerBoardPositions();
+        
         for (let i = 0; i < 6; i++) {
             const tipCoords = this.getStartingPieces(i);
             tipCoords.forEach(coord => this.validBoardCoords.add(this.coordToString(coord)));
         }
 
         this.homeZoneMap.clear();
-        for (let i = 0; i < 6; i++) {
-            this.playerHomes[i] = this.getStartingPieces(i);
-            this.playerDestinations[i] = this.getStartingPieces((i + 3) % 6);
+        for (let i = 0; i < this.numPlayers; i++) {
+            const boardPosition = playerPositions[i];
+            this.playerHomes[i] = this.getStartingPieces(boardPosition);
+            this.playerDestinations[i] = this.getStartingPieces((boardPosition + 3) % 6);
             this.playerHomes[i].forEach(coord => {
                 this.homeZoneMap.set(this.coordToString(coord), i);
             });
+        }
+    }
+
+    getPlayerBoardPositions() {
+        // Return board positions (0-5) for each player based on game setup
+        switch (this.numPlayers) {
+            case 2:
+                return [0, 3]; // Opposite corners
+            case 3:
+                return [0, 2, 4]; // Every other corner
+            case 4:
+                return [0, 1, 3, 4]; // Adjacent pairs
+            case 6:
+                return [0, 1, 2, 3, 4, 5]; // All positions
+            default:
+                return [0, 3]; // Default to 2-player
         }
     }
 
@@ -217,7 +177,8 @@ class ChineseCheckersGame {
 
             if (this.homeZoneMap.has(coordStr)) {
                 const playerOwner = this.homeZoneMap.get(coordStr);
-                hole.classList.add('home-zone-hole', `player${playerOwner}-home`);
+                const colorIndex = this.playerColors && this.playerColors[playerOwner] !== undefined ? this.playerColors[playerOwner] : playerOwner;
+                hole.classList.add('home-zone-hole', `player${colorIndex}-home`);
             }
 
             if (!this.gameOver && destinationZoneCoords.has(coordStr)) {
@@ -262,14 +223,14 @@ class ChineseCheckersGame {
     }
 
     updateUI() {
-        const currentPlayer = this.activePlayers[this.currentPlayerIndex];
-        const name = this.playerNames && this.playerNames[this.currentPlayerIndex] ? this.playerNames[this.currentPlayerIndex] : this.PLAYER_NAMES[currentPlayer];
-        const colorIndex = this.playerColors && this.playerColors[this.currentPlayerIndex] !== undefined ? this.playerColors[this.currentPlayerIndex] : currentPlayer;
+        const name = this.playerNames && this.playerNames[this.currentPlayerIndex] ? this.playerNames[this.currentPlayerIndex] : this.PLAYER_NAMES[this.currentPlayerIndex];
+        const colorIndex = this.playerColors && this.playerColors[this.currentPlayerIndex] !== undefined ? this.playerColors[this.currentPlayerIndex] : this.currentPlayerIndex;
         if (this.gameOver) {
             const winnerIdx = (this.currentPlayerIndex + this.activePlayers.length - 1) % this.activePlayers.length;
-            const winnerName = this.playerNames && this.playerNames[winnerIdx] ? this.playerNames[winnerIdx] : this.PLAYER_NAMES[this.activePlayers[winnerIdx]];
+            const winnerName = this.playerNames && this.playerNames[winnerIdx] ? this.playerNames[winnerIdx] : this.PLAYER_NAMES[winnerIdx];
             this.statusTextEl.textContent = `${winnerName} wins!`;
-            this.turnIndicatorEl.style.backgroundColor = this.PLAYER_COLORS[colorIndex];
+            const winnerColorIndex = this.playerColors && this.playerColors[winnerIdx] !== undefined ? this.playerColors[winnerIdx] : winnerIdx;
+            this.turnIndicatorEl.style.backgroundColor = this.PLAYER_COLORS[winnerColorIndex];
             this.endTurnBtn.style.visibility = 'hidden';
         } else {
             this.statusTextEl.textContent = `${name}'s Turn`;
@@ -367,12 +328,11 @@ class ChineseCheckersGame {
     }
 
     endTurn() {
-        const currentPlayer = this.activePlayers[this.currentPlayerIndex];
-        if (this.checkWin(currentPlayer)) {
+        if (this.checkWin(this.currentPlayerIndex)) {
             this.gameOver = true;
             const winnerName = this.playerNames && this.playerNames[this.currentPlayerIndex] 
                 ? this.playerNames[this.currentPlayerIndex] 
-                : this.PLAYER_NAMES[currentPlayer];
+                : this.PLAYER_NAMES[this.currentPlayerIndex];
             showNotification(`🎉 ${winnerName} wins!`, 'success', 5000);
             setTimeout(() => {
                 showGameOverlay(winnerName);
@@ -381,7 +341,7 @@ class ChineseCheckersGame {
             this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.activePlayers.length;
             const newPlayerName = this.playerNames && this.playerNames[this.currentPlayerIndex] 
                 ? this.playerNames[this.currentPlayerIndex] 
-                : this.PLAYER_NAMES[this.activePlayers[this.currentPlayerIndex]];
+                : this.PLAYER_NAMES[this.currentPlayerIndex];
             showNotification(`${newPlayerName}'s turn`, 'info', 2000);
         }
         this.selectedPiece = null;
@@ -392,10 +352,10 @@ class ChineseCheckersGame {
         this.render();
     }
 
-    checkWin(player) {
-        return this.playerDestinations[player].every(coord => {
+    checkWin(playerIndex) {
+        return this.playerDestinations[playerIndex].every(coord => {
             const piece = this.board.get(this.coordToString(coord));
-            return piece && piece.player === player;
+            return piece && piece.player === playerIndex;
         });
     }
 }
@@ -497,15 +457,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let game = null;
     let selectedPlayerCount = 0;
-    let selectedColorIndices = [-1, -1];
-    let playerNames = ["", ""];
+    let selectedColorIndices = [];
+    let playerNames = [];
     let currentSetupPlayer = 0;
 
     const showColorSelection = (numPlayers) => {
         selectedPlayerCount = numPlayers;
         colorSwatches.innerHTML = '';
-        selectedColorIndices = [-1, -1];
-        playerNames = ["", ""];
+        selectedColorIndices = new Array(numPlayers).fill(-1);
+        playerNames = new Array(numPlayers).fill("");
         currentSetupPlayer = 0;
         startGameBtn.style.display = 'none';
         let nextBtn = document.getElementById('next-player-btn');
@@ -543,19 +503,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Next button event
         nextBtn.onclick = () => {
-            if (currentSetupPlayer === 0) {
-                currentSetupPlayer = 1;
+            if (currentSetupPlayer < selectedPlayerCount - 1) {
+                currentSetupPlayer++;
                 colorSwatches.innerHTML = '';
                 playerNameInputs.innerHTML = `
-                    <label>Player 2 Name: <input type=\"text\" id=\"player-name-input\" placeholder=\"Player 2\"></label>
+                    <label>Player ${currentSetupPlayer+1} Name: <input type=\"text\" id=\"player-name-input\" placeholder=\"Player ${currentSetupPlayer+1}\"></label>
                 `;
-                selectedColorIndices[1] = -1;
+                selectedColorIndices[currentSetupPlayer] = -1;
                 renderColorSwatches();
-                nextBtn.style.display = 'none';
-                startGameBtn.style.display = 'inline-block';
-                startGameBtn.disabled = true;
+                
+                // Show start game button only on the last player
+                if (currentSetupPlayer === selectedPlayerCount - 1) {
+                    nextBtn.style.display = 'none';
+                    startGameBtn.style.display = 'inline-block';
+                    startGameBtn.disabled = true;
+                }
+                
                 document.getElementById('player-name-input').addEventListener('input', (e) => {
-                    playerNames[1] = e.target.value;
+                    playerNames[currentSetupPlayer] = e.target.value;
                     validateSetup();
                 });
             }
@@ -591,10 +556,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function validateSetup() {
         let nextBtn = document.getElementById('next-player-btn');
-        if (currentSetupPlayer === 0) {
-            nextBtn.disabled = !(playerNames[0].trim() && selectedColorIndices[0] !== -1);
+        if (currentSetupPlayer < selectedPlayerCount - 1) {
+            nextBtn.disabled = !(playerNames[currentSetupPlayer].trim() && selectedColorIndices[currentSetupPlayer] !== -1);
         } else {
-            startGameBtn.disabled = !(playerNames[1].trim() && selectedColorIndices[1] !== -1);
+            startGameBtn.disabled = !(playerNames[currentSetupPlayer].trim() && selectedColorIndices[currentSetupPlayer] !== -1);
         }
     }
 
@@ -612,12 +577,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     startGameBtn.addEventListener('click', () => {
-        if (selectedColorIndices[0] === -1 || selectedColorIndices[1] === -1) return;
+        // Check that all players have selected colors and names
+        for (let i = 0; i < selectedPlayerCount; i++) {
+            if (selectedColorIndices[i] === -1 || !playerNames[i].trim()) {
+                showNotification('❌ Please complete setup for all players', 'warning', 2000);
+                return;
+            }
+        }
+        
         showNotification('🎮 Starting new game...', 'info', 2000);
         setupScreen.style.display = 'none';
         gameScreen.style.display = 'flex';
-        // Pass both player colors and names to the game (update constructor as needed)
-        game = new ChineseCheckersGame(svgBoard, selectedPlayerCount, selectedColorIndices[0]);
+        
+        // Create game with human player as first player (index 0)
+        game = new ChineseCheckersGame(svgBoard, selectedPlayerCount, 0);
         game.playerNames = playerNames.slice(); // Save names for later use
         game.playerColors = selectedColorIndices.slice(); // Save colors for later use
         game.init();
