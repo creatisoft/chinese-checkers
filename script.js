@@ -1,0 +1,646 @@
+class ChineseCheckersGame {
+    // --- Constants & Config ---
+    SVG_NS = "http://www.w3.org/2000/svg";
+    BOARD_RADIUS = 8;
+    STAR_TIP_SIZE = 4;
+    HEX_SIZE = 20;
+    PLAYER_NAMES = ["Blue", "White", "Green", "Yellow", "Black", "Red"];
+    PLAYER_COLORS = [
+        "var(--player0-color)", "var(--player1-color)", "var(--player2-color)",
+        "var(--player3-color)", "var(--player4-color)", "var(--player5-color)"
+    ];
+    AXIAL_DIRECTIONS = [
+        { q: 1, r: 0 }, { q: 1, r: -1 }, { q: 0, r: -1 },
+        { q: -1, r: 0 }, { q: -1, r: 1 }, { q: 0, r: 1 }
+    ];
+    PLAYER_ROTATIONS = [1, 2, 3, 4, 5, 0]; // Blue, White, Green, Yellow, Black, Red
+
+    constructor(svgElement, numPlayers, humanPlayerIndex) {
+        this.svgBoard = svgElement;
+        this.numPlayers = numPlayers;
+        this.humanPlayerIndex = humanPlayerIndex;
+
+        this.statusTextEl = document.getElementById('status-text');
+        this.turnIndicatorEl = document.getElementById('turn-indicator');
+        this.endTurnBtn = document.getElementById('end-turn-btn');
+
+        this.board = new Map();
+        this.validBoardCoords = new Set();
+        this.playerHomes = [];
+        this.playerDestinations = [];
+        this.homeZoneMap = new Map();
+        this.activePlayers = [];
+        this.currentPlayerIndex = 0;
+        this.selectedPiece = null;
+        this.validMoves = [];
+        this.turnState = 'select';
+        this.turnMovedPiece = null;
+        this.gameOver = false;
+        // Add these for custom names/colors
+        this.playerNames = window.playerNames ? window.playerNames.slice() : ["Player 1", "Player 2"];
+        this.playerColors = window.selectedColorIndices ? window.selectedColorIndices.slice() : [0, 3];
+        this.showValidMoves = true;
+    }
+
+    init() {
+        this.setupPlayerConfig();
+        this.createBoardLayout();
+        this.populateInitialPieces();
+        this.bindEvents();
+        this.updateUI();
+        this.render();
+    }
+
+    setupPlayerConfig() {
+        this.activePlayers = [this.humanPlayerIndex];
+        let opponents = [];
+
+        // Determine opponent positions based on number of players for a balanced game
+        switch (this.numPlayers) {
+            case 2:
+                opponents = [(this.humanPlayerIndex + 3) % 6];
+                break;
+            case 3:
+                opponents = [
+                    (this.humanPlayerIndex + 2) % 6,
+                    (this.humanPlayerIndex + 4) % 6
+                ];
+                break;
+            case 4:
+                // 4-player uses two opposing pairs. Find the pair the human is in, and add the other pair.
+                const pair1 = [0, 3]; // Blue, Yellow
+                const pair2 = [1, 5]; // White, Red
+                const pair3 = [2, 4]; // Green, Black
+                
+                if (pair1.includes(this.humanPlayerIndex)) opponents = [ ...pair2, ...pair3 ];
+                else if (pair2.includes(this.humanPlayerIndex)) opponents = [ ...pair1, ...pair3 ];
+                else opponents = [ ...pair1, ...pair2 ];
+                
+                // We only need 3 opponents, not 4. Let's use a standard 4p layout relative to the player
+                const humanOpposite = (this.humanPlayerIndex + 3) % 6;
+                const p1 = (this.humanPlayerIndex + 1) % 6;
+                const p2 = (this.humanPlayerIndex - 1 + 6) % 6;
+                if (p1 !== humanOpposite && p2 !== humanOpposite) {
+                    // A non-standard 4 player setup. Let's use adjacent pairs.
+                    opponents = [
+                        (this.humanPlayerIndex + 1) % 6,
+                        (this.humanPlayerIndex + 2) % 6,
+                        (this.humanPlayerIndex + 3) % 6,
+                    ].filter(p => p !== this.humanPlayerIndex).slice(0,3);
+                     // This is not standard, let's stick to a better 4p logic.
+                     // Standard 4p is two pairs of opposites. We will use one pair and one player from another.
+                     // Let's use a simpler logic: two adjacent players and the one opposite.
+                     opponents = [
+                         (this.humanPlayerIndex + 1) % 6,
+                         (this.humanPlayerIndex - 1 + 6) % 6,
+                         (this.humanPlayerIndex + 3) % 6
+                     ];
+                }
+                // Let's use the standard 4-player config: two pairs of opposite players
+                // Red & Green vs Black & White is a common one.
+                // We'll use the human's color and their opposite, and one other opposite pair.
+                const opposite = (this.humanPlayerIndex + 3) % 6;
+                let otherPairLead = 0;
+                while(otherPairLead === this.humanPlayerIndex || otherPairLead === opposite) {
+                    otherPairLead++;
+                }
+                opponents = [opposite, otherPairLead, (otherPairLead + 3) % 6];
+                break;
+            case 6:
+                opponents = [0, 1, 2, 3, 4, 5].filter(p => p !== this.humanPlayerIndex);
+                break;
+        }
+        
+        // Shuffle opponents for random turn order after the human
+        for (let i = opponents.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [opponents[i], opponents[j]] = [opponents[j], opponents[i]];
+        }
+
+        this.activePlayers.push(...opponents);
+        this.currentPlayerIndex = 0; // Human player always starts
+    }
+
+    createBoardLayout() {
+        this.validBoardCoords.clear();
+        for (let q = -this.STAR_TIP_SIZE; q <= this.STAR_TIP_SIZE; q++) {
+            for (let r = -this.STAR_TIP_SIZE; r <= this.STAR_TIP_SIZE; r++) {
+                if (-q - r >= -this.STAR_TIP_SIZE && -q - r <= this.STAR_TIP_SIZE) {
+                    this.validBoardCoords.add(this.coordToString({ q, r }));
+                }
+            }
+        }
+        for (let i = 0; i < 6; i++) {
+            const tipCoords = this.getStartingPieces(i);
+            tipCoords.forEach(coord => this.validBoardCoords.add(this.coordToString(coord)));
+        }
+
+        this.homeZoneMap.clear();
+        for (let i = 0; i < 6; i++) {
+            this.playerHomes[i] = this.getStartingPieces(i);
+            this.playerDestinations[i] = this.getStartingPieces((i + 3) % 6);
+            this.playerHomes[i].forEach(coord => {
+                this.homeZoneMap.set(this.coordToString(coord), i);
+            });
+        }
+    }
+
+    populateInitialPieces() {
+        this.board.clear();
+        // Use playerColors for piece color assignment
+        this.activePlayers.forEach((playerIndex, i) => {
+            const colorIndex = this.playerColors[i] !== undefined ? this.playerColors[i] : playerIndex;
+            const pieces = this.playerHomes[playerIndex];
+            pieces.forEach(coord => {
+                this.board.set(this.coordToString(coord), { player: i, colorIndex });
+            });
+        });
+    }
+    
+    bindEvents() {
+        this.endTurnBtn.onclick = () => this.endTurn();
+    }
+
+    axialToPixel(q, r) {
+        const svgSize = this.svgBoard.getBoundingClientRect();
+        const x = this.HEX_SIZE * (3 / 2 * q) + svgSize.width / 2;
+        const y = this.HEX_SIZE * (Math.sqrt(3) / 2 * q + Math.sqrt(3) * r) + svgSize.height / 2;
+        return { x, y };
+    }
+    coordToString(coord) { return `${coord.q},${coord.r}`; }
+    stringToCoord(str) { const [q, r] = str.split(',').map(Number); return { q, r }; }
+    getNeighbor(q, r, direction) {
+        const dir = this.AXIAL_DIRECTIONS[direction];
+        return { q: q + dir.q, r: r + dir.r };
+    }
+
+    getStartingPieces(playerIndex) {
+        let base_coords = [];
+        for (let i = 1; i <= this.STAR_TIP_SIZE; i++) {
+            for (let j = 0; j < i; j++) {
+                base_coords.push({ q: -this.STAR_TIP_SIZE + j, r: -i });
+            }
+        }
+        const rotation = this.PLAYER_ROTATIONS[playerIndex];
+        return base_coords.map(c => this.rotateCoord(c, rotation));
+    }
+
+    rotateCoord(coord, rotations) {
+        let { q, r } = coord;
+        for (let i = 0; i < rotations; i++) {
+            const temp_q = q;
+            q = -r;
+            r = temp_q + r;
+        }
+        return { q, r };
+    }
+
+    render() {
+        this.svgBoard.innerHTML = '';
+        this.renderBoardHoles();
+        this.renderPieces();
+        this.renderHighlights();
+    }
+
+    renderBoardHoles() {
+        const currentPlayer = this.activePlayers[this.currentPlayerIndex];
+        const destinationZoneCoords = new Set(this.playerDestinations[currentPlayer].map(this.coordToString));
+
+        this.validBoardCoords.forEach(coordStr => {
+            const { q, r } = this.stringToCoord(coordStr);
+            const { x, y } = this.axialToPixel(q, r);
+            const hole = document.createElementNS(this.SVG_NS, 'circle');
+            hole.setAttribute('cx', x);
+            hole.setAttribute('cy', y);
+            hole.setAttribute('r', this.HEX_SIZE * 0.9);
+            hole.classList.add('hole');
+
+            if (this.homeZoneMap.has(coordStr)) {
+                const playerOwner = this.homeZoneMap.get(coordStr);
+                hole.classList.add('home-zone-hole', `player${playerOwner}-home`);
+            }
+
+            if (!this.gameOver && destinationZoneCoords.has(coordStr)) {
+                hole.classList.add('destination-zone');
+            }
+
+            hole.onclick = () => this.handleHoleClick(q, r);
+            this.svgBoard.appendChild(hole);
+        });
+    }
+
+    renderPieces() {
+        this.board.forEach((piece, coordStr) => {
+            const { q, r } = this.stringToCoord(coordStr);
+            const { x, y } = this.axialToPixel(q, r);
+            const pieceEl = document.createElementNS(this.SVG_NS, 'circle');
+            pieceEl.setAttribute('cx', x);
+            pieceEl.setAttribute('cy', y);
+            pieceEl.setAttribute('r', this.HEX_SIZE * 0.8);
+            // Use colorIndex for piece color
+            pieceEl.classList.add('piece', `player${piece.colorIndex}`);
+            if (this.selectedPiece && this.selectedPiece.q === q && this.selectedPiece.r === r) {
+                pieceEl.classList.add('selected');
+            }
+            pieceEl.onclick = () => this.handlePieceClick(q, r, piece.player);
+            this.svgBoard.appendChild(pieceEl);
+        });
+    }
+
+    renderHighlights() {
+        if (!this.showValidMoves) return;
+        this.validMoves.forEach(move => {
+            const { x, y } = this.axialToPixel(move.q, move.r);
+            const moveEl = document.createElementNS(this.SVG_NS, 'circle');
+            moveEl.setAttribute('cx', x);
+            moveEl.setAttribute('cy', y);
+            moveEl.setAttribute('r', this.HEX_SIZE * 0.4);
+            moveEl.classList.add('valid-move');
+            moveEl.onclick = () => this.handleHoleClick(move.q, move.r);
+            this.svgBoard.appendChild(moveEl);
+        });
+    }
+
+    updateUI() {
+        const currentPlayer = this.activePlayers[this.currentPlayerIndex];
+        const name = this.playerNames && this.playerNames[this.currentPlayerIndex] ? this.playerNames[this.currentPlayerIndex] : this.PLAYER_NAMES[currentPlayer];
+        const colorIndex = this.playerColors && this.playerColors[this.currentPlayerIndex] !== undefined ? this.playerColors[this.currentPlayerIndex] : currentPlayer;
+        if (this.gameOver) {
+            const winnerIdx = (this.currentPlayerIndex + this.activePlayers.length - 1) % this.activePlayers.length;
+            const winnerName = this.playerNames && this.playerNames[winnerIdx] ? this.playerNames[winnerIdx] : this.PLAYER_NAMES[this.activePlayers[winnerIdx]];
+            this.statusTextEl.textContent = `${winnerName} wins!`;
+            this.turnIndicatorEl.style.backgroundColor = this.PLAYER_COLORS[colorIndex];
+            this.endTurnBtn.style.visibility = 'hidden';
+        } else {
+            this.statusTextEl.textContent = `${name}'s Turn`;
+            this.turnIndicatorEl.style.backgroundColor = this.PLAYER_COLORS[colorIndex];
+            this.endTurnBtn.style.visibility = (this.turnState === 'moved' || this.turnState === 'jumping') ? 'visible' : 'hidden';
+        }
+    }
+
+    handlePieceClick(q, r, player) {
+        if (this.gameOver) return;
+        // Use currentPlayerIndex for comparison
+        if (player === this.currentPlayerIndex) {
+            // Allow selecting a piece at start of turn
+            if (this.turnState === 'select') {
+                this.selectPiece(q, r);
+            }
+            // If in jumping state, allow player to continue jumping with the same piece
+            else if (this.turnState === 'jumping' && this.selectedPiece && this.selectedPiece.q === q && this.selectedPiece.r === r) {
+                this.selectPiece(q, r);
+            }
+        }
+    }
+
+    handleHoleClick(q, r) {
+        if (this.gameOver || !this.selectedPiece) return;
+        const targetMove = this.validMoves.find(move => move.q === q && move.r === r);
+        if (targetMove) {
+            this.movePiece(this.selectedPiece, { q, r });
+        }
+    }
+
+    selectPiece(q, r) {
+        this.selectedPiece = { q, r };
+        this.calculateValidMoves(q, r);
+        this.render();
+    }
+
+    calculateValidMoves(q, r) {
+        this.validMoves = [];
+        const visited = new Set([this.coordToString({ q, r })]);
+
+        if (this.turnState === 'select') {
+            for (let i = 0; i < 6; i++) {
+                const neighbor = this.getNeighbor(q, r, i);
+                if (this.validBoardCoords.has(this.coordToString(neighbor)) && !this.board.has(this.coordToString(neighbor))) {
+                    this.validMoves.push(neighbor);
+                }
+            }
+        }
+        this.findJumps(q, r, visited);
+    }
+
+    findJumps(q, r, visited) {
+        for (let i = 0; i < 6; i++) {
+            const neighbor = this.getNeighbor(q, r, i);
+            const jumpTo = this.getNeighbor(neighbor.q, neighbor.r, i);
+            const jumpToStr = this.coordToString(jumpTo);
+
+            if (this.validBoardCoords.has(jumpToStr) && this.board.has(this.coordToString(neighbor)) && !this.board.has(jumpToStr) && !visited.has(jumpToStr)) {
+                this.validMoves.push(jumpTo);
+                visited.add(jumpToStr);
+                this.findJumps(jumpTo.q, jumpTo.r, visited);
+            }
+        }
+    }
+
+    movePiece(from, to) {
+        const piece = this.board.get(this.coordToString(from));
+        this.board.delete(this.coordToString(from));
+        this.board.set(this.coordToString(to), piece);
+
+        const dx = to.q - from.q;
+        const dy = to.r - from.r;
+        const isJump = Math.abs(dx) > 1 || Math.abs(dy) > 1 || Math.abs(dx + dy) > 1;
+
+        this.selectedPiece = null;
+        this.validMoves = [];
+        this.turnMovedPiece = to;
+
+        if (isJump) {
+            this.turnState = 'jumping';
+            showNotification('🦘 Great jump! Continue or end turn.', 'success', 2000);
+            // After a jump, allow player to continue jumping or end turn
+            this.selectPiece(to.q, to.r);
+            // End Turn button is visible, player can choose to end turn
+        } else {
+            this.turnState = 'moved';
+            showNotification('✨ Nice move!', 'info', 1500);
+            // Automatically end the turn after a single step
+            this.endTurn();
+        }
+
+        this.render();
+        this.updateUI();
+    }
+
+    endTurn() {
+        const currentPlayer = this.activePlayers[this.currentPlayerIndex];
+        if (this.checkWin(currentPlayer)) {
+            this.gameOver = true;
+            const winnerName = this.playerNames && this.playerNames[this.currentPlayerIndex] 
+                ? this.playerNames[this.currentPlayerIndex] 
+                : this.PLAYER_NAMES[currentPlayer];
+            showNotification(`🎉 ${winnerName} wins!`, 'success', 5000);
+            setTimeout(() => {
+                showGameOverlay(winnerName);
+            }, 500);
+        } else {
+            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.activePlayers.length;
+            const newPlayerName = this.playerNames && this.playerNames[this.currentPlayerIndex] 
+                ? this.playerNames[this.currentPlayerIndex] 
+                : this.PLAYER_NAMES[this.activePlayers[this.currentPlayerIndex]];
+            showNotification(`${newPlayerName}'s turn`, 'info', 2000);
+        }
+        this.selectedPiece = null;
+        this.validMoves = [];
+        this.turnState = 'select';
+        this.turnMovedPiece = null;
+        this.updateUI();
+        this.render();
+    }
+
+    checkWin(player) {
+        return this.playerDestinations[player].every(coord => {
+            const piece = this.board.get(this.coordToString(coord));
+            return piece && piece.player === player;
+        });
+    }
+}
+
+// --- Notification System ---
+function showNotification(message, type = 'info', duration = 3000) {
+    const container = document.getElementById('notification-container');
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    
+    container.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.animation = 'slideOutRight 0.3s ease-out forwards';
+        setTimeout(() => {
+            if (container.contains(notification)) {
+                container.removeChild(notification);
+            }
+        }, 300);
+    }, duration);
+}
+
+// --- Game State Overlay ---
+function showGameOverlay(winnerName) {
+    const overlay = document.getElementById('game-state-overlay');
+    const winnerText = document.getElementById('winner-text');
+    const winnerSubtitle = document.getElementById('winner-subtitle');
+    
+    winnerText.textContent = `🎉 ${winnerName} Wins! 🎉`;
+    winnerSubtitle.textContent = 'Congratulations on your victory!';
+    
+    overlay.classList.add('visible');
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        overlay.classList.remove('visible');
+    }, 5000);
+}
+
+function hideGameOverlay() {
+    const overlay = document.getElementById('game-state-overlay');
+    overlay.classList.remove('visible');
+}
+
+// --- Enhanced Button Interactions ---
+document.addEventListener('DOMContentLoaded', () => {
+    // Add interactive effects to all buttons
+    document.querySelectorAll('.setup-btn, .game-button').forEach(button => {
+        if (!button.classList.contains('interactive-element')) {
+            button.classList.add('interactive-element');
+        }
+    });
+
+    // Add sound effects (visual feedback)
+    document.addEventListener('click', (e) => {
+        if (e.target.matches('.setup-btn, .game-button, .color-swatch')) {
+            // Create ripple effect
+            const ripple = document.createElement('div');
+            ripple.style.cssText = `
+                position: absolute;
+                border-radius: 50%;
+                background: rgba(255,255,255,0.5);
+                pointer-events: none;
+                transform: scale(0);
+                animation: ripple 0.6s ease-out;
+                width: 40px;
+                height: 40px;
+                left: ${e.offsetX - 20}px;
+                top: ${e.offsetY - 20}px;
+            `;
+            
+            if (e.target.style.position !== 'relative') {
+                e.target.style.position = 'relative';
+            }
+            
+            e.target.appendChild(ripple);
+            
+            setTimeout(() => {
+                if (e.target.contains(ripple)) {
+                    e.target.removeChild(ripple);
+                }
+            }, 600);
+        }
+    });
+});
+
+// --- Main Application Setup ---
+document.addEventListener('DOMContentLoaded', () => {
+    const setupScreen = document.getElementById('setup-screen');
+    const playerCountSelection = document.getElementById('player-count-selection');
+    const colorSelectionContainer = document.getElementById('color-selection-container');
+    const colorSwatches = document.getElementById('color-swatches');
+    const startGameBtn = document.getElementById('start-game-btn');
+    const backToPlayersBtn = document.getElementById('back-to-players-btn');
+    const gameScreen = document.getElementById('game-screen');
+    const restartBtn = document.getElementById('restart-btn');
+    const svgBoard = document.getElementById('game-board');
+    
+    let game = null;
+    let selectedPlayerCount = 0;
+    let selectedColorIndices = [-1, -1];
+    let playerNames = ["", ""];
+    let currentSetupPlayer = 0;
+
+    const showColorSelection = (numPlayers) => {
+        selectedPlayerCount = numPlayers;
+        colorSwatches.innerHTML = '';
+        selectedColorIndices = [-1, -1];
+        playerNames = ["", ""];
+        currentSetupPlayer = 0;
+        startGameBtn.style.display = 'none';
+        let nextBtn = document.getElementById('next-player-btn');
+        if (!nextBtn) {
+            nextBtn = document.createElement('button');
+            nextBtn.id = 'next-player-btn';
+            nextBtn.className = 'setup-btn';
+            nextBtn.textContent = 'Next';
+            nextBtn.style.marginLeft = '1rem';
+            colorSelectionContainer.querySelector('#color-selection-controls').appendChild(nextBtn);
+        }
+        nextBtn.style.display = 'inline-block';
+        nextBtn.disabled = true;
+
+        // Remove any previous name inputs
+        const oldInputs = document.getElementById('player-name-inputs');
+        if (oldInputs) oldInputs.remove();
+        // Add player name input
+        const playerNameInputs = document.createElement('div');
+        playerNameInputs.id = 'player-name-inputs';
+        playerNameInputs.innerHTML = `
+            <label>Player ${currentSetupPlayer+1} Name: <input type="text" id="player-name-input" placeholder="Player ${currentSetupPlayer+1}"></label>
+        `;
+        colorSelectionContainer.insertBefore(playerNameInputs, colorSwatches);
+
+        renderColorSwatches();
+        playerCountSelection.style.display = 'none';
+        colorSelectionContainer.style.display = 'block';
+
+        // Name input event
+        document.getElementById('player-name-input').addEventListener('input', (e) => {
+            playerNames[currentSetupPlayer] = e.target.value;
+            validateSetup();
+        });
+
+        // Next button event
+        nextBtn.onclick = () => {
+            if (currentSetupPlayer === 0) {
+                currentSetupPlayer = 1;
+                colorSwatches.innerHTML = '';
+                playerNameInputs.innerHTML = `
+                    <label>Player 2 Name: <input type=\"text\" id=\"player-name-input\" placeholder=\"Player 2\"></label>
+                `;
+                selectedColorIndices[1] = -1;
+                renderColorSwatches();
+                nextBtn.style.display = 'none';
+                startGameBtn.style.display = 'inline-block';
+                startGameBtn.disabled = true;
+                document.getElementById('player-name-input').addEventListener('input', (e) => {
+                    playerNames[1] = e.target.value;
+                    validateSetup();
+                });
+            }
+        };
+    };
+
+    function renderColorSwatches() {
+        const tempGame = new ChineseCheckersGame(svgBoard, 2, 0); 
+        const PLAYER_NAMES = tempGame.PLAYER_NAMES;
+        const PLAYER_COLORS = tempGame.PLAYER_COLORS;
+        for (let playerIndex = 0; playerIndex < 6; playerIndex++) {
+            const swatch = document.createElement('div');
+            swatch.className = 'color-swatch';
+            swatch.dataset.playerIndex = playerIndex;
+            swatch.style.backgroundColor = PLAYER_COLORS[playerIndex];
+            swatch.title = PLAYER_NAMES[playerIndex];
+            if (playerIndex === 1) swatch.style.border = '2px solid #616161';
+            if (playerIndex === 4) swatch.style.border = '2px solid #f5f5f5';
+            // Disable swatch if already chosen by other player
+            if (selectedColorIndices.includes(playerIndex)) {
+                swatch.style.opacity = '0.5';
+                swatch.style.pointerEvents = 'none';
+            }
+            swatch.addEventListener('click', () => {
+                document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+                swatch.classList.add('selected');
+                selectedColorIndices[currentSetupPlayer] = playerIndex;
+                validateSetup();
+            });
+            colorSwatches.appendChild(swatch);
+        }
+    }
+
+    function validateSetup() {
+        let nextBtn = document.getElementById('next-player-btn');
+        if (currentSetupPlayer === 0) {
+            nextBtn.disabled = !(playerNames[0].trim() && selectedColorIndices[0] !== -1);
+        } else {
+            startGameBtn.disabled = !(playerNames[1].trim() && selectedColorIndices[1] !== -1);
+        }
+    }
+
+    document.querySelectorAll('#player-selection .setup-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const numPlayers = parseInt(button.dataset.players, 10);
+            showNotification(`🎲 Setting up ${numPlayers} player game...`, 'info', 1500);
+            showColorSelection(numPlayers);
+        });
+    });
+
+    backToPlayersBtn.addEventListener('click', () => {
+        colorSelectionContainer.style.display = 'none';
+        playerCountSelection.style.display = 'block';
+    });
+    
+    startGameBtn.addEventListener('click', () => {
+        if (selectedColorIndices[0] === -1 || selectedColorIndices[1] === -1) return;
+        showNotification('🎮 Starting new game...', 'info', 2000);
+        setupScreen.style.display = 'none';
+        gameScreen.style.display = 'flex';
+        // Pass both player colors and names to the game (update constructor as needed)
+        game = new ChineseCheckersGame(svgBoard, selectedPlayerCount, selectedColorIndices[0]);
+        game.playerNames = playerNames.slice(); // Save names for later use
+        game.playerColors = selectedColorIndices.slice(); // Save colors for later use
+        game.init();
+        hideGameOverlay();
+    });
+
+    restartBtn.addEventListener('click', () => {
+        showNotification('🔄 Restarting game...', 'info', 1500);
+        gameScreen.style.display = 'none';
+        colorSelectionContainer.style.display = 'none';
+        playerCountSelection.style.display = 'block';
+        setupScreen.style.display = 'block';
+        game = null;
+        svgBoard.innerHTML = '';
+        hideGameOverlay();
+    });
+
+    document.getElementById('toggle-valid-moves').addEventListener('change', function() {
+        if (game) {
+            game.showValidMoves = this.checked;
+            game.render();
+            const message = this.checked ? 'Valid moves shown ✅' : 'Valid moves hidden 👁️';
+            showNotification(message, 'info', 1500);
+        }
+    });
+});
