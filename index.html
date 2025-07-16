@@ -615,20 +615,13 @@
             fill: var(--valid-move-color);
             cursor: pointer;
             opacity: 0.8;
-            transition: all 0.3s ease;
-            animation: validMoveBounce 2s ease-in-out infinite;
+            transition: opacity 0.3s ease, filter 0.3s ease;
             filter: drop-shadow(0 3px 10px rgba(0,255,127,0.3));
         }
 
         .valid-move:hover { 
             opacity: 1;
-            transform: scale(1.2);
             filter: drop-shadow(0 5px 15px rgba(0,255,127,0.5));
-        }
-
-        @keyframes validMoveBounce {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
         }
 
         /* --- Notification System --- */
