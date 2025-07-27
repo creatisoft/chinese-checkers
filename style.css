@@ -34,8 +34,16 @@ body {
     margin: 0;
     background: var(--primary-bg);
     color: var(--text-primary);
-    overflow-x: auto;
+    overflow-x: hidden;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    /* Prevent layout shifts on iOS */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
 }
 
 body::before {
@@ -334,6 +342,11 @@ h1 {
     backdrop-filter: blur(20px);
     border: 3px solid transparent;
     background-clip: padding-box;
+    /* Prevent shifts on iOS */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
 }
 
 
@@ -341,6 +354,11 @@ h1 {
 #game-board {
     display: block;
     filter: drop-shadow(0 0 10px rgba(0,0,0,0.3));
+    /* Prevent rendering shifts on mobile */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
 }
 
 #game-info {
@@ -501,7 +519,10 @@ h1 {
 .hole, .destination-zone {
     stroke: var(--border-color);
     stroke-width: 2;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
+    /* Reduce rendering shifts */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
 }
 .hole { 
     fill: var(--hole-color);
@@ -541,8 +562,13 @@ h1 {
     cursor: pointer;
     stroke: rgba(0,0,0,0.4);
     stroke-width: 2;
-    transition: filter 0.3s ease, stroke 0.3s ease;
+    transition: filter 0.2s ease, stroke 0.2s ease;
     filter: drop-shadow(0 3px 6px rgba(0,0,0,0.3));
+    /* Optimize for mobile touch */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
 }
 
 .piece:hover {
@@ -590,8 +616,13 @@ h1 {
     fill: var(--valid-move-color);
     cursor: pointer;
     opacity: 0.8;
-    transition: opacity 0.3s ease, filter 0.3s ease;
+    transition: opacity 0.2s ease, filter 0.2s ease;
     filter: drop-shadow(0 3px 10px rgba(0,255,127,0.3));
+    /* Optimize for mobile */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
 }
 
 .valid-move:hover { 
@@ -763,4 +794,27 @@ h1 {
 @keyframes ripple {
     0% { transform: scale(0); opacity: 1; }
     100% { transform: scale(4); opacity: 0; }
+}
+
+/* --- iPad and Mobile Optimizations --- */
+@media screen and (max-width: 1024px) {
+    /* Reduce animations and transitions for better mobile performance */
+    body::before {
+        animation: none; /* Disable background animation on mobile */
+    }
+    
+    .selected {
+        animation: none; /* Disable pulsing animation during touch */
+    }
+    
+    .destination-zone {
+        animation: none; /* Disable dashed line animation on mobile */
+    }
+    
+    /* Ensure stable positioning */
+    #game-screen {
+        position: relative;
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+    }
 }
