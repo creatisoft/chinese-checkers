@@ -595,17 +595,20 @@ h1 {
         drop-shadow(0 6px 20px rgba(0,0,0,0.5))
         drop-shadow(0 0 30px var(--highlight-color));
     animation: selectedPulse 1.5s ease-in-out infinite;
+    /* Prevent layout shifts */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
 }
 
 @keyframes selectedPulse {
     0%, 100% { 
-        stroke-width: 4;
+        transform: translateZ(0) scale(1);
         filter: 
             drop-shadow(0 6px 20px rgba(0,0,0,0.5))
             drop-shadow(0 0 30px var(--highlight-color));
     }
     50% { 
-        stroke-width: 6;
+        transform: translateZ(0) scale(1.05);
         filter: 
             drop-shadow(0 8px 25px rgba(0,0,0,0.6))
             drop-shadow(0 0 40px var(--highlight-color));
