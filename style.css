@@ -808,6 +808,7 @@ h1 {
     
     .selected {
         animation: none; /* Disable pulsing animation during touch */
+        transform: translateZ(0) !important; /* Force stable transform, no scaling */
     }
     
     .destination-zone {
