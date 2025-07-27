@@ -3,7 +3,7 @@ class ChineseCheckersGame {
     SVG_NS = "http://www.w3.org/2000/svg";
     BOARD_RADIUS = 8;
     STAR_TIP_SIZE = 4;
-    HEX_SIZE = 20;
+    HEX_SIZE = 15;
     PLAYER_NAMES = ["Blue", "White", "Green", "Yellow", "Black", "Red"];
     PLAYER_COLORS = [
         "var(--player0-color)", "var(--player1-color)", "var(--player2-color)",
