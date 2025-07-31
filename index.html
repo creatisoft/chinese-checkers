@@ -46,6 +46,14 @@
                 <div id="color-swatches">
                     <!-- Color swatches are generated here by JavaScript -->
                 </div>
+                <div id="ai-difficulty-selection" style="display: none;">
+                    <h3>AI Difficulty</h3>
+                    <div class="difficulty-buttons">
+                        <button class="difficulty-btn" data-difficulty="easy">Easy</button>
+                        <button class="difficulty-btn selected" data-difficulty="medium">Medium</button>
+                        <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+                    </div>
+                </div>
                 <div id="color-selection-controls">
                     <button id="back-to-players-btn" class="setup-btn interactive-element">Back</button>
                     <button id="start-game-btn" class="setup-btn interactive-element" disabled>Start Game</button>
@@ -71,6 +79,7 @@
         </div>
     </div>
 
+    <script src="ai-player.js"></script>
     <script src="script.js"></script>
 
 </body>

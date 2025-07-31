@@ -15,10 +15,12 @@ class ChineseCheckersGame {
     ];
     PLAYER_ROTATIONS = [1, 2, 3, 4, 5, 0]; // Blue, White, Green, Yellow, Black, Red
 
-    constructor(svgElement, numPlayers, humanPlayerIndex) {
+    constructor(svgElement, numPlayers, humanPlayerIndex, aiEnabled = false, aiDifficulty = 'medium') {
         this.svgBoard = svgElement;
         this.numPlayers = numPlayers;
         this.humanPlayerIndex = humanPlayerIndex;
+        this.aiEnabled = aiEnabled;
+        this.aiDifficulty = aiDifficulty;
 
         this.statusTextEl = document.getElementById('status-text');
         this.turnIndicatorEl = document.getElementById('turn-indicator');
@@ -36,6 +38,8 @@ class ChineseCheckersGame {
         this.turnState = 'select';
         this.turnMovedPiece = null;
         this.gameOver = false;
+        this.aiPlayer = null;
+        this.isAITurn = false;
         // Add these for custom names/colors
         this.playerNames = window.playerNames ? window.playerNames.slice() : ["Player 1", "Player 2"];
         this.playerColors = window.selectedColorIndices ? window.selectedColorIndices.slice() : [0, 3];
@@ -49,6 +53,13 @@ class ChineseCheckersGame {
         this.bindEvents();
         this.updateUI();
         this.render();
+        
+        // Initialize AI if enabled
+        if (this.aiEnabled && window.ChineseCheckersAI) {
+            this.aiPlayer = new ChineseCheckersAI(this, this.aiDifficulty);
+            // Check if first player is AI
+            this.checkForAITurn();
+        }
     }
 
     setupPlayerConfig() {
@@ -233,14 +244,23 @@ class ChineseCheckersGame {
             this.turnIndicatorEl.style.backgroundColor = this.PLAYER_COLORS[winnerColorIndex];
             this.endTurnBtn.style.visibility = 'hidden';
         } else {
-            this.statusTextEl.textContent = `${name}'s Turn`;
+            // Show AI indicator if it's AI's turn
+            const currentPlayerIndex = this.activePlayers[this.currentPlayerIndex];
+            const isAIPlayer = this.aiEnabled && currentPlayerIndex !== this.humanPlayerIndex;
+            this.statusTextEl.textContent = `${name}'s Turn${isAIPlayer ? ' (AI)' : ''}`;
             this.turnIndicatorEl.style.backgroundColor = this.PLAYER_COLORS[colorIndex];
-            this.endTurnBtn.style.visibility = (this.turnState === 'moved' || this.turnState === 'jumping') ? 'visible' : 'hidden';
+            
+            // Hide end turn button during AI turns
+            if (this.isAITurn) {
+                this.endTurnBtn.style.visibility = 'hidden';
+            } else {
+                this.endTurnBtn.style.visibility = (this.turnState === 'moved' || this.turnState === 'jumping') ? 'visible' : 'hidden';
+            }
         }
     }
 
     handlePieceClick(q, r, player) {
-        if (this.gameOver) return;
+        if (this.gameOver || this.isAITurn) return;
         // Use currentPlayerIndex for comparison
         if (player === this.currentPlayerIndex) {
             // Allow selecting a piece at start of turn
@@ -255,7 +275,7 @@ class ChineseCheckersGame {
     }
 
     handleHoleClick(q, r) {
-        if (this.gameOver || !this.selectedPiece) return;
+        if (this.gameOver || this.isAITurn || !this.selectedPiece) return;
         const targetMove = this.validMoves.find(move => move.q === q && move.r === r);
         if (targetMove) {
             this.movePiece(this.selectedPiece, { q, r });
@@ -343,6 +363,9 @@ class ChineseCheckersGame {
                 ? this.playerNames[this.currentPlayerIndex] 
                 : this.PLAYER_NAMES[this.currentPlayerIndex];
             showNotification(`${newPlayerName}'s turn`, 'info', 2000);
+            
+            // Check if it's now an AI player's turn
+            this.checkForAITurn();
         }
         this.selectedPiece = null;
         this.validMoves = [];
@@ -350,6 +373,32 @@ class ChineseCheckersGame {
         this.turnMovedPiece = null;
         this.updateUI();
         this.render();
+    }
+
+    /**
+     * Check if current player is AI and trigger AI turn if needed
+     */
+    checkForAITurn() {
+        if (!this.aiEnabled || !this.aiPlayer || this.gameOver) {
+            return;
+        }
+
+        const currentPlayerIndex = this.activePlayers[this.currentPlayerIndex];
+        // If current player is not the human player, it's an AI turn
+        if (currentPlayerIndex !== this.humanPlayerIndex) {
+            this.isAITurn = true;
+            
+            // Disable user input during AI turn
+            this.endTurnBtn.disabled = true;
+            
+            // Trigger AI turn after a brief delay
+            setTimeout(() => {
+                this.aiPlayer.executeAITurn().then(() => {
+                    this.isAITurn = false;
+                    this.endTurnBtn.disabled = false;
+                });
+            }, 500);
+        }
     }
 
     checkWin(playerIndex) {
@@ -449,6 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const playerCountSelection = document.getElementById('player-count-selection');
     const colorSelectionContainer = document.getElementById('color-selection-container');
     const colorSwatches = document.getElementById('color-swatches');
+    const aiDifficultySelection = document.getElementById('ai-difficulty-selection');
     const startGameBtn = document.getElementById('start-game-btn');
     const backToPlayersBtn = document.getElementById('back-to-players-btn');
     const gameScreen = document.getElementById('game-screen');
@@ -460,6 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedColorIndices = [];
     let playerNames = [];
     let currentSetupPlayer = 0;
+    let aiDifficulty = 'medium';
 
     const showColorSelection = (numPlayers) => {
         selectedPlayerCount = numPlayers;
@@ -467,6 +518,14 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedColorIndices = new Array(numPlayers).fill(-1);
         playerNames = new Array(numPlayers).fill("");
         currentSetupPlayer = 0;
+        
+        // Show AI difficulty selection for multiplayer games (player 1 is human, others are AI)
+        if (numPlayers > 1) {
+            aiDifficultySelection.style.display = 'block';
+        } else {
+            aiDifficultySelection.style.display = 'none';
+        }
+        
         startGameBtn.style.display = 'none';
         let nextBtn = document.getElementById('next-player-btn');
         if (!nextBtn) {
@@ -486,9 +545,20 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add player name input
         const playerNameInputs = document.createElement('div');
         playerNameInputs.id = 'player-name-inputs';
+        
+        // For the first player (human), ask for name. For others, suggest AI names
+        const isHumanPlayer = currentSetupPlayer === 0;
+        const defaultName = isHumanPlayer ? `Player ${currentSetupPlayer+1}` : `AI Player ${currentSetupPlayer}`;
+        const labelText = isHumanPlayer ? `Your Name:` : `AI Player ${currentSetupPlayer} Name:`;
+        
         playerNameInputs.innerHTML = `
-            <label>Player ${currentSetupPlayer+1} Name: <input type="text" id="player-name-input" placeholder="Player ${currentSetupPlayer+1}"></label>
+            <label>${labelText} <input type="text" id="player-name-input" placeholder="${defaultName}" value="${isHumanPlayer ? '' : defaultName}"></label>
         `;
+        
+        // Pre-fill AI player names
+        if (!isHumanPlayer) {
+            playerNames[currentSetupPlayer] = defaultName;
+        }
         colorSelectionContainer.insertBefore(playerNameInputs, colorSwatches);
 
         renderColorSwatches();
@@ -500,15 +570,32 @@ document.addEventListener('DOMContentLoaded', () => {
             playerNames[currentSetupPlayer] = e.target.value;
             validateSetup();
         });
+        
+        // Auto-validate if AI name is pre-filled
+        if (!isHumanPlayer) {
+            validateSetup();
+        }
 
         // Next button event
         nextBtn.onclick = () => {
             if (currentSetupPlayer < selectedPlayerCount - 1) {
                 currentSetupPlayer++;
                 colorSwatches.innerHTML = '';
+                
+                // Determine if this is a human or AI player
+                const isNextHuman = currentSetupPlayer === 0;
+                const defaultName = isNextHuman ? `Player ${currentSetupPlayer+1}` : `AI Player ${currentSetupPlayer}`;
+                const labelText = isNextHuman ? `Your Name:` : `AI Player ${currentSetupPlayer} Name:`;
+                
                 playerNameInputs.innerHTML = `
-                    <label>Player ${currentSetupPlayer+1} Name: <input type=\"text\" id=\"player-name-input\" placeholder=\"Player ${currentSetupPlayer+1}\"></label>
+                    <label>${labelText} <input type=\"text\" id=\"player-name-input\" placeholder=\"${defaultName}\" value=\"${isNextHuman ? '' : defaultName}\"></label>
                 `;
+                
+                // Pre-fill AI player names
+                if (!isNextHuman) {
+                    playerNames[currentSetupPlayer] = defaultName;
+                }
+                
                 selectedColorIndices[currentSetupPlayer] = -1;
                 renderColorSwatches();
                 
@@ -523,6 +610,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     playerNames[currentSetupPlayer] = e.target.value;
                     validateSetup();
                 });
+                
+                // Auto-validate if AI name is pre-filled
+                if (!isNextHuman) {
+                    validateSetup();
+                }
             }
         };
     };
@@ -571,6 +663,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // AI difficulty selection
+    document.querySelectorAll('.difficulty-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove selected class from all difficulty buttons
+            document.querySelectorAll('.difficulty-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            // Add selected class to clicked button
+            button.classList.add('selected');
+            aiDifficulty = button.dataset.difficulty;
+            showNotification(`AI difficulty set to ${aiDifficulty.charAt(0).toUpperCase() + aiDifficulty.slice(1)}`, 'info', 1500);
+        });
+    });
+
     backToPlayersBtn.addEventListener('click', () => {
         colorSelectionContainer.style.display = 'none';
         playerCountSelection.style.display = 'block';
@@ -589,8 +695,11 @@ document.addEventListener('DOMContentLoaded', () => {
         setupScreen.style.display = 'none';
         gameScreen.style.display = 'flex';
         
+        // Enable AI for multiplayer games (player 0 is human, others are AI)
+        const aiEnabled = selectedPlayerCount > 1;
+        
         // Create game with human player as first player (index 0)
-        game = new ChineseCheckersGame(svgBoard, selectedPlayerCount, 0);
+        game = new ChineseCheckersGame(svgBoard, selectedPlayerCount, 0, aiEnabled, aiDifficulty);
         game.playerNames = playerNames.slice(); // Save names for later use
         game.playerColors = selectedColorIndices.slice(); // Save colors for later use
         game.init();
