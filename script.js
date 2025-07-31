@@ -15,12 +15,11 @@ class ChineseCheckersGame {
     ];
     PLAYER_ROTATIONS = [1, 2, 3, 4, 5, 0]; // Blue, White, Green, Yellow, Black, Red
 
-    constructor(svgElement, numPlayers, humanPlayerIndex, aiEnabled = false, aiDifficulty = 'medium') {
+    constructor(svgElement, numPlayers, playerTypes, playerDifficulties) {
         this.svgBoard = svgElement;
         this.numPlayers = numPlayers;
-        this.humanPlayerIndex = humanPlayerIndex;
-        this.aiEnabled = aiEnabled;
-        this.aiDifficulty = aiDifficulty;
+        this.playerTypes = playerTypes; // Array of 'human' or 'ai' for each player
+        this.playerDifficulties = playerDifficulties; // Array of difficulty levels for AI players
 
         this.statusTextEl = document.getElementById('status-text');
         this.turnIndicatorEl = document.getElementById('turn-indicator');
@@ -38,7 +37,7 @@ class ChineseCheckersGame {
         this.turnState = 'select';
         this.turnMovedPiece = null;
         this.gameOver = false;
-        this.aiPlayer = null;
+        this.aiPlayers = new Map(); // Map of player index to AI instance
         this.isAITurn = false;
         // Add these for custom names/colors
         this.playerNames = window.playerNames ? window.playerNames.slice() : ["Player 1", "Player 2"];
@@ -54,12 +53,18 @@ class ChineseCheckersGame {
         this.updateUI();
         this.render();
         
-        // Initialize AI if enabled
-        if (this.aiEnabled && window.ChineseCheckersAI) {
-            this.aiPlayer = new ChineseCheckersAI(this, this.aiDifficulty);
-            // Check if first player is AI
-            this.checkForAITurn();
+        // Initialize AI players for each AI player type
+        if (window.ChineseCheckersAI) {
+            for (let i = 0; i < this.numPlayers; i++) {
+                if (this.playerTypes[i] === 'ai') {
+                    const difficulty = this.playerDifficulties[i] || 'medium';
+                    this.aiPlayers.set(i, new ChineseCheckersAI(this, difficulty));
+                }
+            }
         }
+        
+        // Check if first player is AI
+        this.checkForAITurn();
     }
 
     setupPlayerConfig() {
@@ -245,9 +250,9 @@ class ChineseCheckersGame {
             this.endTurnBtn.style.visibility = 'hidden';
         } else {
             // Show AI indicator if it's AI's turn
-            const currentPlayerIndex = this.activePlayers[this.currentPlayerIndex];
-            const isAIPlayer = this.aiEnabled && currentPlayerIndex !== this.humanPlayerIndex;
-            this.statusTextEl.textContent = `${name}'s Turn${isAIPlayer ? ' (AI)' : ''}`;
+            const isAIPlayer = this.playerTypes[this.currentPlayerIndex] === 'ai';
+            const difficultyText = isAIPlayer ? ` (AI-${this.playerDifficulties[this.currentPlayerIndex] || 'medium'})` : '';
+            this.statusTextEl.textContent = `${name}'s Turn${difficultyText}`;
             this.turnIndicatorEl.style.backgroundColor = this.PLAYER_COLORS[colorIndex];
             
             // Hide end turn button during AI turns
@@ -379,25 +384,27 @@ class ChineseCheckersGame {
      * Check if current player is AI and trigger AI turn if needed
      */
     checkForAITurn() {
-        if (!this.aiEnabled || !this.aiPlayer || this.gameOver) {
+        if (this.gameOver) {
             return;
         }
 
-        const currentPlayerIndex = this.activePlayers[this.currentPlayerIndex];
-        // If current player is not the human player, it's an AI turn
-        if (currentPlayerIndex !== this.humanPlayerIndex) {
-            this.isAITurn = true;
-            
-            // Disable user input during AI turn
-            this.endTurnBtn.disabled = true;
-            
-            // Trigger AI turn after a brief delay
-            setTimeout(() => {
-                this.aiPlayer.executeAITurn().then(() => {
-                    this.isAITurn = false;
-                    this.endTurnBtn.disabled = false;
-                });
-            }, 500);
+        // Check if current player is AI
+        if (this.playerTypes[this.currentPlayerIndex] === 'ai') {
+            const aiPlayer = this.aiPlayers.get(this.currentPlayerIndex);
+            if (aiPlayer) {
+                this.isAITurn = true;
+                
+                // Disable user input during AI turn
+                this.endTurnBtn.disabled = true;
+                
+                // Trigger AI turn after a brief delay
+                setTimeout(() => {
+                    aiPlayer.executeAITurn().then(() => {
+                        this.isAITurn = false;
+                        this.endTurnBtn.disabled = false;
+                    });
+                }, 500);
+            }
         }
     }
 
@@ -509,22 +516,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedPlayerCount = 0;
     let selectedColorIndices = [];
     let playerNames = [];
+    let playerTypes = []; // Array to store 'human' or 'ai' for each player
+    let playerDifficulties = []; // Array to store difficulty for each AI player
     let currentSetupPlayer = 0;
-    let aiDifficulty = 'medium';
 
     const showColorSelection = (numPlayers) => {
         selectedPlayerCount = numPlayers;
         colorSwatches.innerHTML = '';
         selectedColorIndices = new Array(numPlayers).fill(-1);
         playerNames = new Array(numPlayers).fill("");
+        playerTypes = new Array(numPlayers).fill('human'); // Default to human
+        playerDifficulties = new Array(numPlayers).fill('medium'); // Default difficulty
         currentSetupPlayer = 0;
-        
-        // Show AI difficulty selection for multiplayer games (player 1 is human, others are AI)
-        if (numPlayers > 1) {
-            aiDifficultySelection.style.display = 'block';
-        } else {
-            aiDifficultySelection.style.display = 'none';
-        }
         
         startGameBtn.style.display = 'none';
         let nextBtn = document.getElementById('next-player-btn');
@@ -542,62 +545,25 @@ document.addEventListener('DOMContentLoaded', () => {
         // Remove any previous name inputs
         const oldInputs = document.getElementById('player-name-inputs');
         if (oldInputs) oldInputs.remove();
+        
+        // Setup player type selection handlers
+        setupPlayerTypeSelection();
+        
+        // Setup AI difficulty selection handlers  
+        setupAIDifficultySelection();
+        
         // Add player name input
-        const playerNameInputs = document.createElement('div');
-        playerNameInputs.id = 'player-name-inputs';
+        updatePlayerSetup();
         
-        // For the first player (human), ask for name. For others, suggest AI names
-        const isHumanPlayer = currentSetupPlayer === 0;
-        const defaultName = isHumanPlayer ? `Player ${currentSetupPlayer+1}` : `AI Player ${currentSetupPlayer}`;
-        const labelText = isHumanPlayer ? `Your Name:` : `AI Player ${currentSetupPlayer} Name:`;
-        
-        playerNameInputs.innerHTML = `
-            <label>${labelText} <input type="text" id="player-name-input" placeholder="${defaultName}" value="${isHumanPlayer ? '' : defaultName}"></label>
-        `;
-        
-        // Pre-fill AI player names
-        if (!isHumanPlayer) {
-            playerNames[currentSetupPlayer] = defaultName;
-        }
-        colorSelectionContainer.insertBefore(playerNameInputs, colorSwatches);
-
-        renderColorSwatches();
         playerCountSelection.style.display = 'none';
         colorSelectionContainer.style.display = 'block';
-
-        // Name input event
-        document.getElementById('player-name-input').addEventListener('input', (e) => {
-            playerNames[currentSetupPlayer] = e.target.value;
-            validateSetup();
-        });
-        
-        // Auto-validate if AI name is pre-filled
-        if (!isHumanPlayer) {
-            validateSetup();
-        }
 
         // Next button event
         nextBtn.onclick = () => {
             if (currentSetupPlayer < selectedPlayerCount - 1) {
                 currentSetupPlayer++;
-                colorSwatches.innerHTML = '';
-                
-                // Determine if this is a human or AI player
-                const isNextHuman = currentSetupPlayer === 0;
-                const defaultName = isNextHuman ? `Player ${currentSetupPlayer+1}` : `AI Player ${currentSetupPlayer}`;
-                const labelText = isNextHuman ? `Your Name:` : `AI Player ${currentSetupPlayer} Name:`;
-                
-                playerNameInputs.innerHTML = `
-                    <label>${labelText} <input type=\"text\" id=\"player-name-input\" placeholder=\"${defaultName}\" value=\"${isNextHuman ? '' : defaultName}\"></label>
-                `;
-                
-                // Pre-fill AI player names
-                if (!isNextHuman) {
-                    playerNames[currentSetupPlayer] = defaultName;
-                }
-                
                 selectedColorIndices[currentSetupPlayer] = -1;
-                renderColorSwatches();
+                updatePlayerSetup();
                 
                 // Show start game button only on the last player
                 if (currentSetupPlayer === selectedPlayerCount - 1) {
@@ -605,22 +571,133 @@ document.addEventListener('DOMContentLoaded', () => {
                     startGameBtn.style.display = 'inline-block';
                     startGameBtn.disabled = true;
                 }
-                
-                document.getElementById('player-name-input').addEventListener('input', (e) => {
-                    playerNames[currentSetupPlayer] = e.target.value;
-                    validateSetup();
-                });
-                
-                // Auto-validate if AI name is pre-filled
-                if (!isNextHuman) {
-                    validateSetup();
-                }
             }
         };
     };
 
+    function setupPlayerTypeSelection() {
+        const playerTypeButtons = document.querySelectorAll('.player-type-btn');
+        playerTypeButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove selected class from all buttons
+                playerTypeButtons.forEach(btn => btn.classList.remove('selected'));
+                // Add selected class to clicked button
+                button.classList.add('selected');
+                
+                const selectedType = button.dataset.type;
+                playerTypes[currentSetupPlayer] = selectedType;
+                
+                // Show/hide AI difficulty based on selection
+                const aiDifficultySelection = document.getElementById('ai-difficulty-selection');
+                if (selectedType === 'ai') {
+                    aiDifficultySelection.style.display = 'block';
+                } else {
+                    aiDifficultySelection.style.display = 'none';
+                }
+                
+                // Update player name suggestion based on type
+                updatePlayerNameSuggestion();
+                validateSetup();
+            });
+        });
+    }
+
+    function setupAIDifficultySelection() {
+        const difficultyButtons = document.querySelectorAll('.difficulty-btn');
+        difficultyButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove selected class from all difficulty buttons
+                difficultyButtons.forEach(btn => btn.classList.remove('selected'));
+                // Add selected class to clicked button
+                button.classList.add('selected');
+                
+                const difficulty = button.dataset.difficulty;
+                playerDifficulties[currentSetupPlayer] = difficulty;
+                showNotification(`AI difficulty set to ${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}`, 'info', 1500);
+                validateSetup();
+            });
+        });
+    }
+
+    function updatePlayerSetup() {
+        // Update player title
+        const playerTitle = document.getElementById('current-player-title');
+        playerTitle.textContent = `Player ${currentSetupPlayer + 1} Setup`;
+        
+        // Reset player type selection to human
+        const playerTypeButtons = document.querySelectorAll('.player-type-btn');
+        playerTypeButtons.forEach(btn => btn.classList.remove('selected'));
+        document.querySelector('.player-type-btn[data-type="human"]').classList.add('selected');
+        playerTypes[currentSetupPlayer] = 'human';
+        
+        // Hide AI difficulty selection initially
+        document.getElementById('ai-difficulty-selection').style.display = 'none';
+        
+        // Reset difficulty selection to medium
+        const difficultyButtons = document.querySelectorAll('.difficulty-btn');
+        difficultyButtons.forEach(btn => btn.classList.remove('selected'));
+        document.querySelector('.difficulty-btn[data-difficulty="medium"]').classList.add('selected');
+        playerDifficulties[currentSetupPlayer] = 'medium';
+        
+        // Add/update player name input
+        updatePlayerNameInput();
+        
+        // Clear and re-render color swatches
+        colorSwatches.innerHTML = '';
+        renderColorSwatches();
+        
+        validateSetup();
+    }
+
+    function updatePlayerNameInput() {
+        // Remove any existing name input
+        const oldInputs = document.getElementById('player-name-inputs');
+        if (oldInputs) oldInputs.remove();
+        
+        // Create new name input
+        const playerNameInputs = document.createElement('div');
+        playerNameInputs.id = 'player-name-inputs';
+        
+        const defaultName = `Player ${currentSetupPlayer + 1}`;
+        playerNameInputs.innerHTML = `
+            <label>Player Name: <input type="text" id="player-name-input" placeholder="${defaultName}" value=""></label>
+        `;
+        
+        // Insert before color swatches
+        colorSelectionContainer.insertBefore(playerNameInputs, colorSwatches);
+        
+        // Add event listener for name input
+        document.getElementById('player-name-input').addEventListener('input', (e) => {
+            playerNames[currentSetupPlayer] = e.target.value;
+            validateSetup();
+        });
+    }
+
+    function updatePlayerNameSuggestion() {
+        const nameInput = document.getElementById('player-name-input');
+        const playerType = playerTypes[currentSetupPlayer];
+        
+        if (playerType === 'ai') {
+            const defaultAIName = `AI Player ${currentSetupPlayer + 1}`;
+            nameInput.placeholder = defaultAIName;
+            // Only pre-fill if current value is empty
+            if (!nameInput.value.trim()) {
+                nameInput.value = defaultAIName;
+                playerNames[currentSetupPlayer] = defaultAIName;
+            }
+        } else {
+            const defaultHumanName = `Player ${currentSetupPlayer + 1}`;
+            nameInput.placeholder = defaultHumanName;
+            // Clear AI name if switching from AI to human
+            if (nameInput.value.includes('AI Player')) {
+                nameInput.value = '';
+                playerNames[currentSetupPlayer] = '';
+            }
+        }
+    }
+
     function renderColorSwatches() {
-        const tempGame = new ChineseCheckersGame(svgBoard, 2, 0); 
+        const tempGame = new ChineseCheckersGame(svgBoard, 2, ['human', 'human'], ['medium', 'medium']); 
         const PLAYER_NAMES = tempGame.PLAYER_NAMES;
         const PLAYER_COLORS = tempGame.PLAYER_COLORS;
         for (let playerIndex = 0; playerIndex < 6; playerIndex++) {
@@ -663,20 +740,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // AI difficulty selection
-    document.querySelectorAll('.difficulty-btn').forEach(button => {
-        button.addEventListener('click', () => {
-            // Remove selected class from all difficulty buttons
-            document.querySelectorAll('.difficulty-btn').forEach(btn => {
-                btn.classList.remove('selected');
-            });
-            // Add selected class to clicked button
-            button.classList.add('selected');
-            aiDifficulty = button.dataset.difficulty;
-            showNotification(`AI difficulty set to ${aiDifficulty.charAt(0).toUpperCase() + aiDifficulty.slice(1)}`, 'info', 1500);
-        });
-    });
-
     backToPlayersBtn.addEventListener('click', () => {
         colorSelectionContainer.style.display = 'none';
         playerCountSelection.style.display = 'block';
@@ -695,11 +758,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setupScreen.style.display = 'none';
         gameScreen.style.display = 'flex';
         
-        // Enable AI for multiplayer games (player 0 is human, others are AI)
-        const aiEnabled = selectedPlayerCount > 1;
-        
-        // Create game with human player as first player (index 0)
-        game = new ChineseCheckersGame(svgBoard, selectedPlayerCount, 0, aiEnabled, aiDifficulty);
+        // Create game with new per-player AI system
+        game = new ChineseCheckersGame(svgBoard, selectedPlayerCount, playerTypes.slice(), playerDifficulties.slice());
         game.playerNames = playerNames.slice(); // Save names for later use
         game.playerColors = selectedColorIndices.slice(); // Save colors for later use
         game.init();

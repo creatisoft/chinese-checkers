@@ -42,18 +42,34 @@
                 </div>
             </div>
             <div id="color-selection-container" style="display: none;">
-                <h2>Choose Your Color</h2>
-                <div id="color-swatches">
-                    <!-- Color swatches are generated here by JavaScript -->
+                <h2>Player Setup</h2>
+                <div id="player-setup-info">
+                    <h3 id="current-player-title">Player 1 Setup</h3>
                 </div>
+                
+                <!-- Player Type Selection -->
+                <div id="player-type-selection">
+                    <h4>Player Type</h4>
+                    <div class="player-type-buttons">
+                        <button class="player-type-btn selected" data-type="human">Human</button>
+                        <button class="player-type-btn" data-type="ai">AI</button>
+                    </div>
+                </div>
+                
+                <!-- AI Difficulty Selection (shown only when AI is selected) -->
                 <div id="ai-difficulty-selection" style="display: none;">
-                    <h3>AI Difficulty</h3>
+                    <h4>AI Difficulty</h4>
                     <div class="difficulty-buttons">
                         <button class="difficulty-btn" data-difficulty="easy">Easy</button>
                         <button class="difficulty-btn selected" data-difficulty="medium">Medium</button>
                         <button class="difficulty-btn" data-difficulty="hard">Hard</button>
                     </div>
                 </div>
+                
+                <div id="color-swatches">
+                    <!-- Color swatches are generated here by JavaScript -->
+                </div>
+                
                 <div id="color-selection-controls">
                     <button id="back-to-players-btn" class="setup-btn interactive-element">Back</button>
                     <button id="start-game-btn" class="setup-btn interactive-element" disabled>Start Game</button>
