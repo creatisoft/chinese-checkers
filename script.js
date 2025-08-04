@@ -3,7 +3,7 @@ class ChineseCheckersGame {
     SVG_NS = "http://www.w3.org/2000/svg";
     BOARD_RADIUS = 8;
     STAR_TIP_SIZE = 4;
-    HEX_SIZE = 30; // Double the size from 15 to 30 for bigger board elements
+    HEX_SIZE = 20; // Reduced from 30 to 20 for smaller board that fits in viewport
     PLAYER_NAMES = ["Blue", "White", "Green", "Yellow", "Black", "Red"];
     PLAYER_COLORS = [
         "var(--player0-color)", "var(--player1-color)", "var(--player2-color)",
@@ -209,7 +209,7 @@ class ChineseCheckersGame {
             const pieceEl = document.createElementNS(this.SVG_NS, 'circle');
             pieceEl.setAttribute('cx', x);
             pieceEl.setAttribute('cy', y);
-            pieceEl.setAttribute('r', this.HEX_SIZE * 0.65); // Increased by 0.25x: 0.4 + (0.4 * 0.25) = 0.5
+            pieceEl.setAttribute('r', this.HEX_SIZE * 0.8); // Adjusted for better proportion with smaller hex size
             // Use colorIndex for piece color
             pieceEl.classList.add('piece', `player${piece.colorIndex}`);
             if (this.selectedPiece && this.selectedPiece.q === q && this.selectedPiece.r === r) {
