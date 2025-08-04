@@ -192,6 +192,7 @@ class ChineseCheckersGame {
             hole.classList.add('hole');
 
             // Only color home zone holes that still have pieces in them
+            // When a piece moves away, the hole stays black
             if (this.homeZoneMap.has(coordStr) && this.board.has(coordStr)) {
                 const playerOwner = this.homeZoneMap.get(coordStr);
                 const colorIndex = this.playerColors && this.playerColors[playerOwner] !== undefined ? this.playerColors[playerOwner] : playerOwner;

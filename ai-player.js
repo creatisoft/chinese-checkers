@@ -247,8 +247,8 @@ class ChineseCheckersAI {
             case 'medium': return Math.random() < 0.7; // 70% chance to continue
             case 'hard': {
                 // Hard AI is smart about when to continue jumping
-                // Stop after 5 jumps to prevent infinite loops
-                if (jumpCount >= 5) return false;
+                // Stop after 3 jumps to prevent infinite loops (reduced from 5)
+                if (jumpCount >= 3) return false;
                 
                 // Always continue if there's significant progress toward goal
                 const currentPlayer = this.game.activePlayers[this.game.currentPlayerIndex];
@@ -261,8 +261,8 @@ class ChineseCheckersAI {
                     return currentDist - newDist;
                 }));
                 
-                // Continue if making good progress (distance reduction >= 1) or randomly 80% of the time
-                return bestJumpProgress >= 1 || Math.random() < 0.8;
+                // Continue if making good progress (distance reduction >= 1) or randomly 60% of the time (reduced from 80%)
+                return bestJumpProgress >= 1 || Math.random() < 0.6;
             }
             default: return Math.random() < 0.6;
         }

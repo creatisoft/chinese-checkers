@@ -47,25 +47,29 @@
                     <h3 id="current-player-title">Player 1 Setup</h3>
                 </div>
                 
-                <!-- Player Type Selection -->
-                <div id="player-type-selection">
-                    <h4>Player Type</h4>
-                    <div class="player-type-buttons">
-                        <button class="player-type-btn selected" data-type="human">Human</button>
-                        <button class="player-type-btn" data-type="ai">AI</button>
+                <!-- Player Type & Difficulty on same line -->
+                <div id="player-config-row">
+                    <!-- Player Type Selection -->
+                    <div id="player-type-selection">
+                        <h4>Player Type</h4>
+                        <div class="player-type-buttons">
+                            <button class="player-type-btn selected" data-type="human">Human</button>
+                            <button class="player-type-btn" data-type="ai">AI</button>
+                        </div>
+                    </div>
+                    
+                    <!-- AI Difficulty Selection (shown only when AI is selected) -->
+                    <div id="ai-difficulty-selection" style="display: none;">
+                        <h4>AI Difficulty</h4>
+                        <div class="difficulty-buttons">
+                            <button class="difficulty-btn" data-difficulty="easy">Easy</button>
+                            <button class="difficulty-btn selected" data-difficulty="medium">Medium</button>
+                            <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+                        </div>
                     </div>
                 </div>
                 
-                <!-- AI Difficulty Selection (shown only when AI is selected) -->
-                <div id="ai-difficulty-selection" style="display: none;">
-                    <h4>AI Difficulty</h4>
-                    <div class="difficulty-buttons">
-                        <button class="difficulty-btn" data-difficulty="easy">Easy</button>
-                        <button class="difficulty-btn selected" data-difficulty="medium">Medium</button>
-                        <button class="difficulty-btn" data-difficulty="hard">Hard</button>
-                    </div>
-                </div>
-                
+                <!-- Colors in a single compact row -->
                 <div id="color-swatches">
                     <!-- Color swatches are generated here by JavaScript -->
                 </div>
