@@ -191,7 +191,8 @@ class ChineseCheckersGame {
             hole.setAttribute('r', this.HEX_SIZE * 0.9);
             hole.classList.add('hole');
 
-            if (this.homeZoneMap.has(coordStr)) {
+            // Only color home zone holes that still have pieces in them
+            if (this.homeZoneMap.has(coordStr) && this.board.has(coordStr)) {
                 const playerOwner = this.homeZoneMap.get(coordStr);
                 const colorIndex = this.playerColors && this.playerColors[playerOwner] !== undefined ? this.playerColors[playerOwner] : playerOwner;
                 hole.classList.add('home-zone-hole', `player${colorIndex}-home`);

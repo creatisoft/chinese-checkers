@@ -197,7 +197,15 @@ class ChineseCheckersAI {
     /**
      * Execute a move sequence (including potential multiple jumps)
      */
-    async executeMoveSequence(move) {
+    async executeMoveSequence(move, jumpCount = 0) {
+        // Prevent infinite loops by limiting jump chains
+        const MAX_JUMPS = 10;
+        if (jumpCount >= MAX_JUMPS) {
+            console.log('AI: Maximum jump chain reached, ending turn');
+            this.game.endTurn();
+            return;
+        }
+        
         // First, select the piece
         this.game.selectPiece(move.from.q, move.from.r);
         await this.sleep(300);
@@ -207,11 +215,11 @@ class ChineseCheckersAI {
         await this.sleep(300);
         
         // If it was a jump and AI can continue jumping, decide whether to continue
-        if (this.game.turnState === 'jumping' && this.shouldContinueJumping(move.to)) {
+        if (this.game.turnState === 'jumping' && this.shouldContinueJumping(move.to, jumpCount)) {
             const nextMove = this.findBestContinuationJump(move.to);
             if (nextMove) {
                 await this.sleep(500); // Brief pause before continuing
-                await this.executeMoveSequence({ from: move.to, to: nextMove });
+                await this.executeMoveSequence({ from: move.to, to: nextMove }, jumpCount + 1);
                 return;
             }
         }
@@ -226,18 +234,36 @@ class ChineseCheckersAI {
     /**
      * Decide if AI should continue jumping
      */
-    shouldContinueJumping(position) {
+    shouldContinueJumping(position, jumpCount = 0) {
         const jumps = this.getValidMovesForPiece(position).filter(move => 
             this.isJumpMove(position, move)
         );
         
         if (jumps.length === 0) return false;
         
-        // Difficulty-based decision making
+        // Difficulty-based decision making with jump count consideration
         switch (this.difficulty) {
             case 'easy': return Math.random() < 0.4; // 40% chance to continue
             case 'medium': return Math.random() < 0.7; // 70% chance to continue
-            case 'hard': return jumps.length > 0; // Always continue if possible
+            case 'hard': {
+                // Hard AI is smart about when to continue jumping
+                // Stop after 5 jumps to prevent infinite loops
+                if (jumpCount >= 5) return false;
+                
+                // Always continue if there's significant progress toward goal
+                const currentPlayer = this.game.activePlayers[this.game.currentPlayerIndex];
+                const destination = this.game.playerDestinations[currentPlayer];
+                const currentDist = this.getMinDistanceToDestination(position, destination);
+                
+                // Check if any jump makes significant progress
+                const bestJumpProgress = Math.max(...jumps.map(jump => {
+                    const newDist = this.getMinDistanceToDestination(jump, destination);
+                    return currentDist - newDist;
+                }));
+                
+                // Continue if making good progress (distance reduction >= 1) or randomly 80% of the time
+                return bestJumpProgress >= 1 || Math.random() < 0.8;
+            }
             default: return Math.random() < 0.6;
         }
     }
