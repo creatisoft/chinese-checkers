@@ -67,6 +67,8 @@ body::before {
     padding: 1rem;
     position: relative;
     z-index: 1;
+    min-height: 100vh;
+    width: 100%;
 }
 
 h1 {
@@ -352,35 +354,38 @@ h1 {
 /* --- Game Screen --- */
 #game-screen {
     display: none; /* Initially hidden */
-    flex-direction: column;
-    align-items: center;
-    gap: 1rem;
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    padding: 0;
+    margin: 0;
 }
 
 #game-board-container {
-    position: relative;
-    padding: 15px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 30px; /* Double the original padding to maintain proportion */
     background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
     border-radius: 50%;
     box-shadow: 
-        0 0 30px rgba(0,0,0,0.3),
-        inset 0 0 15px rgba(255,255,255,0.1),
-        0 0 0 1px rgba(255,255,255,0.2);
+        0 0 60px rgba(0,0,0,0.3), /* Double the shadow size */
+        inset 0 0 30px rgba(255,255,255,0.1), /* Double the inset shadow */
+        0 0 0 2px rgba(255,255,255,0.2); /* Keep border proportional */
     backdrop-filter: blur(20px);
-    border: 3px solid transparent;
+    border: 6px solid transparent; /* Double the border width */
     background-clip: padding-box;
     /* Prevent shifts on iOS */
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
+    -webkit-transform: translate(-50%, -50%) translateZ(0);
+    transform: translate(-50%, -50%) translateZ(0);
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
 }
 
-
-
 #game-board {
     display: block;
-    filter: drop-shadow(0 0 10px rgba(0,0,0,0.3));
+    filter: drop-shadow(0 0 20px rgba(0,0,0,0.3)); /* Double the drop shadow */
     /* Prevent rendering shifts on mobile */
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
@@ -389,19 +394,23 @@ h1 {
 }
 
 #game-info {
+    position: absolute;
+    top: 2rem;
+    left: 2rem;
     display: flex;
     align-items: center;
     gap: 1rem;
     background: var(--card-bg);
     backdrop-filter: blur(20px);
-    padding: 0.5rem 1rem;
+    padding: 0.75rem 1.25rem; /* Slightly larger padding for better visibility */
     border-radius: 20px;
-    min-width: 200px;
+    min-width: 250px; /* Increase min-width for better layout */
     justify-content: space-between;
     box-shadow: 
-        0 10px 30px rgba(0,0,0,0.2),
+        0 15px 40px rgba(0,0,0,0.25), /* Stronger shadow for floating effect */
         0 0 0 1px var(--card-border),
         inset 0 1px 0 rgba(255,255,255,0.1);
+    z-index: 10; /* Ensure it stays above the gameboard */
 }
 
 #status-area {
@@ -723,11 +732,41 @@ h1 {
         stroke-dasharray: none; /* Remove dashed line animation */
     }
     
-    /* Ensure stable positioning */
+    /* Mobile game screen adjustments */
     #game-screen {
         position: relative;
+        width: 100vw;
+        height: 100vh;
         -webkit-transform: translateZ(0);
         transform: translateZ(0);
+    }
+    
+    /* Scale down gameboard for mobile */
+    #game-board-container {
+        padding: 15px; /* Reduce padding on mobile */
+        border: 3px solid transparent; /* Reduce border on mobile */
+        box-shadow: 
+            0 0 30px rgba(0,0,0,0.3),
+            inset 0 0 15px rgba(255,255,255,0.1),
+            0 0 0 1px rgba(255,255,255,0.2);
+    }
+    
+    #game-board {
+        width: 400px !important; /* Smaller gameboard for mobile */
+        height: 400px !important;
+        filter: drop-shadow(0 0 10px rgba(0,0,0,0.3));
+    }
+    
+    /* Adjust game info for mobile */
+    #game-info {
+        top: 1rem;
+        left: 1rem;
+        padding: 0.5rem 0.75rem;
+        min-width: 200px;
+        box-shadow: 
+            0 10px 30px rgba(0,0,0,0.2),
+            0 0 0 1px var(--card-border),
+            inset 0 1px 0 rgba(255,255,255,0.1);
     }
     
     /* Simplify setup screen for mobile */

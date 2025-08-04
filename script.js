@@ -3,7 +3,7 @@ class ChineseCheckersGame {
     SVG_NS = "http://www.w3.org/2000/svg";
     BOARD_RADIUS = 8;
     STAR_TIP_SIZE = 4;
-    HEX_SIZE = 15;
+    HEX_SIZE = 30; // Double the size from 15 to 30 for bigger board elements
     PLAYER_NAMES = ["Blue", "White", "Green", "Yellow", "Black", "Red"];
     PLAYER_COLORS = [
         "var(--player0-color)", "var(--player1-color)", "var(--player2-color)",
@@ -185,7 +185,7 @@ class ChineseCheckersGame {
             const hole = document.createElementNS(this.SVG_NS, 'circle');
             hole.setAttribute('cx', x);
             hole.setAttribute('cy', y);
-            hole.setAttribute('r', this.HEX_SIZE * 0.9);
+            hole.setAttribute('r', this.HEX_SIZE * 0.45); // Properly scaled: 0.9 * 0.5 = 0.45
             hole.classList.add('hole');
 
             // Only color home zone holes that still have pieces in them
@@ -196,6 +196,7 @@ class ChineseCheckersGame {
                 hole.classList.add('home-zone-hole', `player${colorIndex}-home`);
             }
 
+            // Keep all holes black - no destination zone coloring
             hole.onclick = () => this.handleHoleClick(q, r);
             this.svgBoard.appendChild(hole);
         });
@@ -208,7 +209,7 @@ class ChineseCheckersGame {
             const pieceEl = document.createElementNS(this.SVG_NS, 'circle');
             pieceEl.setAttribute('cx', x);
             pieceEl.setAttribute('cy', y);
-            pieceEl.setAttribute('r', this.HEX_SIZE * 0.8);
+            pieceEl.setAttribute('r', this.HEX_SIZE * 0.65); // Increased by 0.25x: 0.4 + (0.4 * 0.25) = 0.5
             // Use colorIndex for piece color
             pieceEl.classList.add('piece', `player${piece.colorIndex}`);
             if (this.selectedPiece && this.selectedPiece.q === q && this.selectedPiece.r === r) {
@@ -226,7 +227,7 @@ class ChineseCheckersGame {
             const moveEl = document.createElementNS(this.SVG_NS, 'circle');
             moveEl.setAttribute('cx', x);
             moveEl.setAttribute('cy', y);
-            moveEl.setAttribute('r', this.HEX_SIZE * 0.4);
+            moveEl.setAttribute('r', this.HEX_SIZE * 0.2); // Properly scaled: 0.4 * 0.5 = 0.2
             moveEl.classList.add('valid-move');
             moveEl.onclick = () => this.handleHoleClick(move.q, move.r);
             this.svgBoard.appendChild(moveEl);
