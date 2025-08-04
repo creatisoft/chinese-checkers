@@ -179,9 +179,6 @@ class ChineseCheckersGame {
     }
 
     renderBoardHoles() {
-        const currentPlayer = this.activePlayers[this.currentPlayerIndex];
-        const destinationZoneCoords = new Set(this.playerDestinations[currentPlayer].map(this.coordToString));
-
         this.validBoardCoords.forEach(coordStr => {
             const { q, r } = this.stringToCoord(coordStr);
             const { x, y } = this.axialToPixel(q, r);
@@ -197,10 +194,6 @@ class ChineseCheckersGame {
                 const playerOwner = this.homeZoneMap.get(coordStr);
                 const colorIndex = this.playerColors && this.playerColors[playerOwner] !== undefined ? this.playerColors[playerOwner] : playerOwner;
                 hole.classList.add('home-zone-hole', `player${colorIndex}-home`);
-            }
-
-            if (!this.gameOver && destinationZoneCoords.has(coordStr)) {
-                hole.classList.add('destination-zone');
             }
 
             hole.onclick = () => this.handleHoleClick(q, r);

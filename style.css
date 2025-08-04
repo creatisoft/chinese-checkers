@@ -3,7 +3,6 @@
     --border-color: #4a4a4a;
     --highlight-color: rgba(255, 215, 0, 0.9);
     --valid-move-color: rgba(0, 255, 127, 0.8);
-    --destination-color: rgba(255, 20, 147, 0.4);
 
     /* Vibrant player colors */
     --player0-color: #00bcd4; /* Cyan */
@@ -511,24 +510,9 @@ h1 {
 }
 
 /* --- SVG Styles --- */
-.hole, .destination-zone {
-    stroke: var(--border-color);
-    stroke-width: 2;
-    transition: all 0.2s ease;
-    /* Reduce rendering shifts */
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
-}
 .hole { 
     fill: var(--hole-color);
     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-}
-
-.destination-zone {
-    fill: var(--destination-color);
-    stroke: #ff1493;
-    stroke-width: 2;
-    stroke-dasharray: 4 4;
 }
 
 .home-zone-hole {
