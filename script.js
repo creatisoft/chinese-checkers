@@ -4,6 +4,9 @@ class ChineseCheckersGame {
     BOARD_RADIUS = 8;
     STAR_TIP_SIZE = 4;
     HEX_SIZE = 20; // Reduced from 30 to 20 for smaller board that fits in viewport
+    // Math constants to avoid repeated sqrt/divisions in hot paths
+    SQRT3 = 1.7320508075688772; // Math.sqrt(3)
+    THREE_HALVES = 1.5; // 3/2
     PLAYER_NAMES = ["Blue", "White", "Green", "Yellow", "Black", "Red"];
     PLAYER_COLORS = [
         "var(--player0-color)", "var(--player1-color)", "var(--player2-color)",
@@ -138,9 +141,11 @@ class ChineseCheckersGame {
     }
 
     axialToPixel(q, r) {
-        const svgSize = this.svgBoard.getBoundingClientRect();
-        const x = this.HEX_SIZE * (3 / 2 * q) + svgSize.width / 2;
-        const y = this.HEX_SIZE * (Math.sqrt(3) / 2 * q + Math.sqrt(3) * r) + svgSize.height / 2;
+        // Use cached SVG size when available to avoid repeated layout thrashing
+        const halfW = (this._svgHalfWidth !== undefined) ? this._svgHalfWidth : this.svgBoard.getBoundingClientRect().width / 2;
+        const halfH = (this._svgHalfHeight !== undefined) ? this._svgHalfHeight : this.svgBoard.getBoundingClientRect().height / 2;
+        const x = this.HEX_SIZE * (this.THREE_HALVES * q) + halfW;
+        const y = this.HEX_SIZE * ((this.SQRT3 / 2) * q + this.SQRT3 * r) + halfH;
         return { x, y };
     }
     coordToString(coord) { return `${coord.q},${coord.r}`; }
@@ -172,14 +177,24 @@ class ChineseCheckersGame {
     }
 
     render() {
-        this.svgBoard.innerHTML = '';
+    // Cache current SVG size for this render pass
+    const rect = this.svgBoard.getBoundingClientRect();
+    this._svgWidth = rect.width;
+    this._svgHeight = rect.height;
+    this._svgHalfWidth = rect.width / 2;
+    this._svgHalfHeight = rect.height / 2;
+
+    // Clear and re-render
+    this.svgBoard.innerHTML = '';
         this.renderBoardHoles();
         this.renderPieces();
         this.renderHighlights();
     }
 
     renderBoardHoles() {
-        this.validBoardCoords.forEach(coordStr => {
+    // Batch DOM insertions to minimize reflows
+    const frag = document.createDocumentFragment();
+    this.validBoardCoords.forEach(coordStr => {
             const { q, r } = this.stringToCoord(coordStr);
             const { x, y } = this.axialToPixel(q, r);
             const hole = document.createElementNS(this.SVG_NS, 'circle');
@@ -198,30 +213,36 @@ class ChineseCheckersGame {
 
             // Keep all holes black - no destination zone coloring
             hole.onclick = () => this.handleHoleClick(q, r);
-            this.svgBoard.appendChild(hole);
+            frag.appendChild(hole);
         });
+        this.svgBoard.appendChild(frag);
     }
 
     renderPieces() {
+        // Batch DOM insertions to minimize reflows
+        const frag = document.createDocumentFragment();
         this.board.forEach((piece, coordStr) => {
             const { q, r } = this.stringToCoord(coordStr);
             const { x, y } = this.axialToPixel(q, r);
             const pieceEl = document.createElementNS(this.SVG_NS, 'circle');
             pieceEl.setAttribute('cx', x);
             pieceEl.setAttribute('cy', y);
-            pieceEl.setAttribute('r', this.HEX_SIZE * 0.8); // Adjusted for better proportion with smaller hex size
+            pieceEl.setAttribute('r', this.HEX_SIZE * 0.8); // Keep existing visual proportion
             // Use colorIndex for piece color
             pieceEl.classList.add('piece', `player${piece.colorIndex}`);
             if (this.selectedPiece && this.selectedPiece.q === q && this.selectedPiece.r === r) {
                 pieceEl.classList.add('selected');
             }
             pieceEl.onclick = () => this.handlePieceClick(q, r, piece.player);
-            this.svgBoard.appendChild(pieceEl);
+            frag.appendChild(pieceEl);
         });
+        this.svgBoard.appendChild(frag);
     }
 
     renderHighlights() {
         if (!this.showValidMoves) return;
+        // Batch DOM insertions to minimize reflows
+        const frag = document.createDocumentFragment();
         this.validMoves.forEach(move => {
             const { x, y } = this.axialToPixel(move.q, move.r);
             const moveEl = document.createElementNS(this.SVG_NS, 'circle');
@@ -230,8 +251,9 @@ class ChineseCheckersGame {
             moveEl.setAttribute('r', this.HEX_SIZE * 0.2); // Properly scaled: 0.4 * 0.5 = 0.2
             moveEl.classList.add('valid-move');
             moveEl.onclick = () => this.handleHoleClick(move.q, move.r);
-            this.svgBoard.appendChild(moveEl);
+            frag.appendChild(moveEl);
         });
+        this.svgBoard.appendChild(frag);
     }
 
     updateUI() {
@@ -319,9 +341,11 @@ class ChineseCheckersGame {
     }
 
     movePiece(from, to) {
-        const piece = this.board.get(this.coordToString(from));
-        this.board.delete(this.coordToString(from));
-        this.board.set(this.coordToString(to), piece);
+        const fromStr = this.coordToString(from);
+        const toStr = this.coordToString(to);
+        const piece = this.board.get(fromStr);
+        this.board.delete(fromStr);
+        this.board.set(toStr, piece);
 
         const dx = to.q - from.q;
         const dy = to.r - from.r;

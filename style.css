@@ -373,8 +373,8 @@ h1 {
     background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
     border-radius: 50%;
     box-shadow: 
-        0 0 40px rgba(0,0,0,0.3), /* Reduced shadow size */
-        inset 0 0 20px rgba(255,255,255,0.1), /* Reduced inset shadow */
+        0 0 32px rgba(0,0,0,0.28), /* Slightly cheaper shadow */
+        inset 0 0 16px rgba(255,255,255,0.1), /* Slightly cheaper inset shadow */
         0 0 0 2px rgba(255,255,255,0.2);
     backdrop-filter: blur(20px);
     border: 4px solid transparent; /* Reduced border width */
@@ -384,16 +384,18 @@ h1 {
     transform: translate(-50%, -50%) translateZ(0);
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
+    contain: layout paint; /* Isolate board container for performance */
 }
 
 #game-board {
     display: block;
-    filter: drop-shadow(0 0 15px rgba(0,0,0,0.3)); /* Reduced drop shadow */
+    filter: drop-shadow(0 0 12px rgba(0,0,0,0.28)); /* Slightly cheaper shadow */
     /* Prevent rendering shifts on mobile */
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
+    contain: layout paint; /* Isolate SVG for layout/paint */
 }
 
 #game-info {
