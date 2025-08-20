@@ -489,7 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
         logoWrapper.style.marginBottom = '1.5rem';
 
         const logoImg = document.createElement('img');
-        logoImg.src = 'public/chinesecheckers-logo.png';
+        logoImg.src = 'chinesecheckers-logo.png';
         logoImg.alt = 'Chinese Checkers Logo';
         logoImg.style.width = '240px';
         logoImg.style.height = '240px';
