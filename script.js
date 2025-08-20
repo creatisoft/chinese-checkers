@@ -479,6 +479,28 @@ function hideGameOverlay() {
 
 // --- Enhanced Button Interactions ---
 document.addEventListener('DOMContentLoaded', () => {
+    // Insert game logo into the player count selection screen only
+    const playerCountSelection = document.getElementById('player-count-selection');
+    if (playerCountSelection) {
+        const logoWrapper = document.createElement('div');
+        logoWrapper.id = 'player-count-logo';
+        logoWrapper.style.display = 'flex';
+        logoWrapper.style.justifyContent = 'center';
+        logoWrapper.style.marginBottom = '1.5rem';
+
+        const logoImg = document.createElement('img');
+        logoImg.src = 'public/chinesecheckers-logo.png';
+        logoImg.alt = 'Chinese Checkers Logo';
+        logoImg.style.width = '240px';
+        logoImg.style.height = '240px';
+        logoImg.style.objectFit = 'contain';
+        logoImg.style.borderRadius = '12px';
+
+        logoWrapper.appendChild(logoImg);
+        // Insert at the top of the player count selection
+        playerCountSelection.insertBefore(logoWrapper, playerCountSelection.firstChild);
+    }
+
     // Add interactive effects to all buttons
     document.querySelectorAll('.setup-btn, .game-button').forEach(button => {
         if (!button.classList.contains('interactive-element')) {
