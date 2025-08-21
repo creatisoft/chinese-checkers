@@ -455,6 +455,9 @@ function showNotification(message, type = 'info', duration = 3000) {
     }, duration);
 }
 
+// Make showNotification globally available
+window.showNotification = showNotification;
+
 // --- Game State Overlay ---
 function showGameOverlay(winnerName) {
     const overlay = document.getElementById('game-state-overlay');
@@ -471,6 +474,9 @@ function showGameOverlay(winnerName) {
         overlay.classList.remove('visible');
     }, 5000);
 }
+
+// Make showGameOverlay globally available
+window.showGameOverlay = showGameOverlay;
 
 function hideGameOverlay() {
     const overlay = document.getElementById('game-state-overlay');

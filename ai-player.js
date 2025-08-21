@@ -396,7 +396,10 @@ class ChineseCheckersAI {
             this.game.statusTextEl.textContent = `${currentPlayerName} is thinking...`;
         }
         
-        showNotification(`${currentPlayerName} (AI) is thinking...`, 'info', this.thinkingTimes[this.difficulty]);
+        // Use globally available showNotification function
+        if (window.showNotification) {
+            window.showNotification(`${currentPlayerName} (AI) is thinking...`, 'info', this.thinkingTimes[this.difficulty]);
+        }
     }
 
     /**
