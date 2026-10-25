@@ -141,11 +141,10 @@ class ChineseCheckersGame {
     }
 
     axialToPixel(q, r) {
-        // Use cached SVG size when available to avoid repeated layout thrashing
-        const halfW = (this._svgHalfWidth !== undefined) ? this._svgHalfWidth : this.svgBoard.getBoundingClientRect().width / 2;
-        const halfH = (this._svgHalfHeight !== undefined) ? this._svgHalfHeight : this.svgBoard.getBoundingClientRect().height / 2;
-        const x = this.HEX_SIZE * (this.THREE_HALVES * q) + halfW;
-        const y = this.HEX_SIZE * ((this.SQRT3 / 2) * q + this.SQRT3 * r) + halfH;
+        // Board coordinates are centered on (0,0); the SVG viewBox in index.html
+        // is centered there too, so CSS can scale the board to any screen size.
+        const x = this.HEX_SIZE * (this.THREE_HALVES * q);
+        const y = this.HEX_SIZE * ((this.SQRT3 / 2) * q + this.SQRT3 * r);
         return { x, y };
     }
     coordToString(coord) { return `${coord.q},${coord.r}`; }
@@ -177,15 +176,7 @@ class ChineseCheckersGame {
     }
 
     render() {
-    // Cache current SVG size for this render pass
-    const rect = this.svgBoard.getBoundingClientRect();
-    this._svgWidth = rect.width;
-    this._svgHeight = rect.height;
-    this._svgHalfWidth = rect.width / 2;
-    this._svgHalfHeight = rect.height / 2;
-
-    // Clear and re-render
-    this.svgBoard.innerHTML = '';
+        this.svgBoard.innerHTML = '';
         this.renderBoardHoles();
         this.renderPieces();
         this.renderHighlights();
@@ -248,9 +239,10 @@ class ChineseCheckersGame {
             const moveEl = document.createElementNS(this.SVG_NS, 'circle');
             moveEl.setAttribute('cx', x);
             moveEl.setAttribute('cy', y);
-            moveEl.setAttribute('r', this.HEX_SIZE * 0.2); // Properly scaled: 0.4 * 0.5 = 0.2
+            moveEl.setAttribute('r', this.HEX_SIZE * 0.25);
+            // Not clickable (pointer-events: none) - taps go to the hole underneath,
+            // which has a larger touch target.
             moveEl.classList.add('valid-move');
-            moveEl.onclick = () => this.handleHoleClick(move.q, move.r);
             frag.appendChild(moveEl);
         });
         this.svgBoard.appendChild(frag);

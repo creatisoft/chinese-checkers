@@ -1,0 +1,288 @@
+# Chinese Checkers: Project Documentation
+
+A browser-based Chinese Checkers game for 2, 3, 4 or 6 players. Any seat can be a human or an AI opponent (Easy, Medium or Hard). It is plain HTML, CSS and JavaScript with no framework. The board is drawn as SVG, and Vite handles the dev server and the production build.
+
+---
+
+## 1. Quick reference
+
+| Item | Value |
+| --- | --- |
+| Runtime | Browser only (no backend) |
+| Build tool | Vite `^7.0.4` (the only dependency, a dev dependency) |
+| Entry point | `index.html` |
+| Game logic | `script.js` (`ChineseCheckersGame` class + UI setup) |
+| AI | `ai-player.js` (`ChineseCheckersAI` class) |
+| Styling | `style.css` |
+| Static assets | `public/` (logo, Vite icon) |
+| Build output | `dist/` (git-ignored) |
+| License | MIT |
+
+### Commands
+
+```bash
+npm install       # install Vite
+npm run dev       # start the dev server with hot reload
+npm run build     # production build into dist/
+npm run preview   # serve the built dist/ locally
+```
+
+---
+
+## 2. Repository layout
+
+```
+chinese-checkers/
+├── .github/description.md   # Short repo description
+├── docs/c-checkers.md       # This document
+├── public/
+│   ├── chinesecheckers-logo.png   # Logo shown on the player-count screen
+│   └── vite.svg
+├── index.html               # Markup for all screens + script/style includes
+├── script.js                # Game engine, rendering, setup flow, notifications
+├── ai-player.js             # AI opponent logic
+├── style.css                # Theme variables, layout, responsive rules
+├── vite.config.js           # base: './', publicDir: public, outDir: dist
+├── package.json
+└── README.md
+```
+
+---
+
+## 3. Architecture overview
+
+```
+index.html
+ ├─ <script type="module" src="ai-player.js">  → defines window.ChineseCheckersAI
+ ├─ <script type="module" src="script.js">     → defines ChineseCheckersGame,
+ │                                               window.showNotification,
+ │                                               window.showGameOverlay,
+ │                                               and wires DOMContentLoaded handlers
+ └─ Simple Analytics script (async, external)
+```
+
+The two modules don't `import` each other. They talk through `window` globals:
+
+- `script.js` checks `window.ChineseCheckersAI` and creates one AI instance per AI seat.
+- `ai-player.js` calls `window.showNotification` and reaches straight into the game instance it was given (`game.board`, `game.selectPiece`, `game.movePiece`, `game.endTurn`, and so on).
+
+So the AI is tightly coupled to the game's internal state and method names. If you rename anything in `ChineseCheckersGame`, check `ai-player.js` as well.
+
+### Screens
+
+All screens are in `index.html`. They are shown and hidden by toggling `style.display`:
+
+1. **Player count selection** (`#player-count-selection`): logo plus 2/3/4/6 buttons.
+2. **Player setup** (`#color-selection-container`): a wizard that runs once per player and collects the type (Human/AI), the AI difficulty, a name and a color.
+3. **Game screen** (`#game-screen`): turn indicator, status text, End Turn and New Game buttons, the "Show Valid Moves" toggle, and the SVG board.
+4. **Overlays**: the toast container (`#notification-container`) and the winner overlay (`#game-state-overlay`).
+
+---
+
+## 4. Board model
+
+### Coordinate system
+
+The board uses **axial hex coordinates** `{ q, r }`. The implied third axis is `s = -q - r`. Coordinates are stored as strings (`"q,r"`) in Maps and Sets, using `coordToString` and `stringToCoord`.
+
+The six neighbor directions are listed in `AXIAL_DIRECTIONS`:
+
+```
+(1,0) (1,-1) (0,-1) (-1,0) (-1,1) (0,1)
+```
+
+### Board shape (121 holes)
+
+`createBoardLayout()` builds `validBoardCoords` from two parts:
+
+1. **Central hexagon**: every `(q, r)` where `|q|`, `|r|` and `|s|` are all ≤ `STAR_TIP_SIZE` (4). That gives 61 holes.
+2. **Six star tips**: 10 holes each, made by `getStartingPieces(i)`. A base triangle is rotated by `PLAYER_ROTATIONS[i]` sixty-degree steps using `rotateCoord` (`q' = -r, r' = q + r`).
+
+61 + 6 × 10 = 121 holes, which is the standard Chinese Checkers board.
+
+> `BOARD_RADIUS = 8` is declared but not used.
+
+### Star points and player seating
+
+There are six star points, numbered 0–5. The tip opposite tip `i` is `(i + 3) % 6`, and that is the player's destination. `getPlayerBoardPositions()` assigns tips by player count:
+
+| Players | Tips used |
+| --- | --- |
+| 2 | 0, 3 |
+| 3 | 0, 2, 4 |
+| 4 | 0, 1, 3, 4 |
+| 6 | 0–5 |
+
+For each seat `i` the game stores:
+- `playerHomes[i]`: the 10 starting coordinates
+- `playerDestinations[i]`: the 10 coordinates of the opposite tip
+- `homeZoneMap`: maps each home coordinate to its owning seat. It is used to tint occupied home holes.
+
+### Pixel layout
+
+`axialToPixel(q, r)` uses a flat-top hex layout centered on `(0, 0)`:
+
+```
+x = HEX_SIZE * 1.5 * q
+y = HEX_SIZE * (√3/2 * q + √3 * r)
+```
+
+`HEX_SIZE` is 20. These are SVG user units, not screen pixels. The `<svg>` in `index.html` has a fixed `viewBox="-265 -265 530 530"` centered on the origin, and CSS sets its on-screen size from `--board-size`. The browser therefore scales the whole board to any screen without the JS knowing the screen size. If you change `HEX_SIZE` or the board shape, update the viewBox so the outer star points (about ±256 × ±224 units including piece radius) still fit.
+
+---
+
+## 5. Game state
+
+Key fields on `ChineseCheckersGame`:
+
+| Field | Meaning |
+| --- | --- |
+| `board` | `Map<"q,r", { player, colorIndex }>`, the occupied holes |
+| `validBoardCoords` | `Set<"q,r">`, all 121 holes |
+| `activePlayers` | `[0 … numPlayers-1]` |
+| `currentPlayerIndex` | Whose turn it is |
+| `turnState` | `'select'` → `'jumping'` or `'moved'` → back to `'select'` |
+| `selectedPiece` | `{q, r}` of the selected piece, or `null` |
+| `validMoves` | Array of `{q, r}` targets for the selected piece |
+| `playerTypes` / `playerDifficulties` | Per-seat `'human'`/`'ai'` and `'easy'`/`'medium'`/`'hard'` |
+| `playerNames` / `playerColors` | Names and color indices from setup |
+| `aiPlayers` | `Map<seat, ChineseCheckersAI>` |
+| `isAITurn` | Blocks human input while an AI is moving |
+| `showValidMoves` | Controlled by the "Show Valid Moves" checkbox |
+
+A piece's `player` is its **seat index**. Its `colorIndex` is the color chosen for that seat (0–5, which selects the CSS variable `--playerN-color`).
+
+---
+
+## 6. Rules and turn flow
+
+### Move generation (`calculateValidMoves`)
+
+- In the `'select'` state, the targets are every empty adjacent hole (a single step) **plus** every hole reachable by jumping.
+- In the `'jumping'` state, the targets are jumps only.
+- `findJumps` searches recursively. A jump goes over an occupied neighbor (anyone's piece) into the empty hole directly beyond it. Every hole reachable by a chain of jumps becomes a target, so one click can complete a multi-hop chain. A `visited` set stops the search from looping.
+
+### Turn sequence
+
+```
+select piece ──► click target
+                   ├─ single step → turnState 'moved' → endTurn() automatically
+                   └─ jump        → turnState 'jumping'
+                                      ├─ piece stays selected; player may keep jumping
+                                      └─ "End Turn" button → endTurn()
+```
+
+`endTurn()`:
+1. Calls `checkWin(currentPlayerIndex)`, which is true when all 10 destination holes hold that player's pieces.
+2. On a win, it sets `gameOver`, shows a toast, and shows the winner overlay 500 ms later. The overlay hides itself after 5 s.
+3. Otherwise, it moves on to the next seat and calls `checkForAITurn()`.
+4. Either way, it resets the selection, valid moves and `turnState`, then re-renders.
+
+### Rendering
+
+`render()` clears the SVG and redraws it completely in three layers. Each layer is built in a `DocumentFragment`:
+
+1. `renderBoardHoles()` draws the holes. A home hole is tinted with its owner's color only while a piece sits in it.
+2. `renderPieces()` draws the pieces. The selected piece gets the `.selected` class.
+3. `renderHighlights()` draws small `.valid-move` dots, if `showValidMoves` is on.
+
+Click handlers are attached to holes and pieces as they are drawn (`onclick`). The `.valid-move` dots have `pointer-events: none`, so a tap passes through to the hole underneath. Each `.hole` has a transparent 16-unit stroke that makes its tap target about the size of the hole spacing.
+
+---
+
+## 7. AI (`ai-player.js`)
+
+Each AI seat has its own `ChineseCheckersAI(game, difficulty)` instance. Its turn runs like this:
+
+1. `checkForAITurn()` sets `isAITurn`, disables End Turn, and calls `executeAITurn()` after 500 ms.
+2. `executeAITurn()` shows a "thinking…" status and toast, then waits for the difficulty's thinking time (Easy 800 ms, Medium 1200 ms, Hard 1800 ms).
+3. `findBestMove()` picks a `{from, to}` move using the strategy for the difficulty.
+4. `executeMoveSequence()` uses the **same public game methods a human click would use** (`selectPiece` → `movePiece`), with 300 ms pauses so the move is visible. After a jump it may continue the chain, then it calls `endTurn()`.
+
+### Strategies
+
+All distances are hex distances to the **nearest** destination hole (`getMinDistanceToDestination`).
+
+| Difficulty | Move choice | Continue jumping? |
+| --- | --- | --- |
+| **Easy** | Shuffles its pieces and takes the first one that can move. 60% of the time it prefers a forward move, otherwise any random move. | 40% chance |
+| **Medium** | Greedy score: `distanceGain × 10`, +5 for a jump, +15 for landing in the destination, plus up to 2 random. | 70% chance |
+| **Hard** | Ignores pieces already in the destination (unless all of them are). Score: `distanceGain × 15`, +8 for a jump, +3 per follow-up jump available, +20 for landing in the destination, −2 for straying far from the center, plus up to 1 random. | Stops after 3 continuations. Otherwise continues if a jump gains ≥ 1 distance, or 60% of the time. |
+
+Jump chains are capped at `MAX_JUMPS = 10` as a backstop.
+
+> **Note:** `getValidMovesForPiece` calls `game.calculateValidMoves`, which **overwrites `game.validMoves`**. While the AI is evaluating moves, the game's highlight state is temporarily wrong. This doesn't matter in practice, because `selectPiece` recalculates it before the next render.
+
+---
+
+## 8. Setup flow (`script.js`, second `DOMContentLoaded` handler)
+
+1. Clicking a player-count button calls `showColorSelection(n)`. It resets the per-player arrays (`selectedColorIndices`, `playerNames`, `playerTypes`, `playerDifficulties`) and adds a **Next** button if there isn't one yet.
+2. `updatePlayerSetup()` runs once for each player. It resets the type to Human and the difficulty to Medium, rebuilds the name input, and re-renders the six color swatches. Colors already chosen by earlier players are faded out and can't be clicked.
+3. Choosing **AI** shows the difficulty buttons and pre-fills the name with "AI Player N".
+4. `validateSetup()` enables Next (or Start Game for the last player) only when the player has a non-empty name and a color.
+5. **Start Game** creates `ChineseCheckersGame`, copies in the names and colors, and calls `init()`.
+6. **New Game** (`#restart-btn`) goes back to the player-count screen and discards the game instance.
+
+The first `DOMContentLoaded` handler inserts the logo and adds a ripple effect to button clicks.
+
+---
+
+## 9. UI utilities
+
+- **`showNotification(message, type, duration)`** shows a toast in `#notification-container`. `type` is `info`, `success` or `warning`. When `duration` runs out, the toast slides out and is removed. It is exposed on `window`.
+- **`showGameOverlay(winnerName)`** and **`hideGameOverlay()`** show and hide the winner overlay.
+
+---
+
+## 10. Styling (`style.css`)
+
+- **Theme tokens** live on `:root`:
+  - board: `--hole-color`, `--highlight-color`, `--valid-move-color`
+  - players: `--player0-color` … `--player5-color` (Cyan, White, Green, Yellow, Dark Gray, Red)
+  - UI: `--primary-bg`, `--accent-color`, `--card-bg`, `--text-primary`, and so on
+- **Piece and home classes** `.playerN` and `.playerN-home` map to those tokens. White (`player1`) and dark gray (`player4`) pieces get contrasting strokes so they stand out on the board.
+- **Board sizing**: `--board-size` on `:root` sets the SVG's width and height. It's the largest square that fits after the title and status bar, capped at 900px. `--vh` is `100dvh` where supported, so mobile browser toolbars are taken into account.
+- **Layouts**:
+  - Portrait (default): status bar above the board.
+  - `(orientation: landscape) and (min-width: 900px)`: status panel in a column to the left of the board, so the board can use the full height.
+- **Touch** (`pointer: coarse`): buttons and color swatches are at least 44px, the toggle is larger, the name field uses 16px text so iOS doesn't zoom in, and toasts move to the bottom (bottom-left in landscape) so they don't cover the controls. Toasts never take taps (`pointer-events: none`).
+- **Hover effects** are inside `@media (hover: hover)`, so they don't stay on after a tap on touch screens.
+- **Size breakpoints**: `max-width: 1024px` (slimmer board frame, no background effects) and `max-width: 480px` (compact status bar and winner overlay).
+- **Safe areas**: `.container` padding uses `env(safe-area-inset-*)`, because the viewport is `viewport-fit=cover`.
+- **Accessibility**: a `prefers-reduced-motion: reduce` block turns animations down.
+- **Mobile**: the viewport meta disables zoom, and Apple web-app metas allow a full-screen home-screen launch.
+
+> The color names in `PLAYER_NAMES` (`"Blue"`, `"Black"`) don't quite match the CSS colors (cyan, dark gray). They only appear as swatch tooltips and fallback names.
+
+---
+
+## 11. Build and deployment
+
+- `vite.config.js` sets `base: './'`, so the built site uses **relative** asset paths and works from any subdirectory (for example GitHub Pages). The comment in the file still mentions `'/'`, but `'./'` is what's actually set.
+- Files in `public/` are copied as-is to the root of `dist/`. That's why the logo is loaded as `'chinesecheckers-logo.png'`, with no `public/` prefix.
+- Fonts come from Google Fonts (Poppins), and analytics come from Simple Analytics (`scripts.simpleanalyticscdn.com`). Both are loaded at runtime, so the page needs network access for them.
+
+---
+
+## 12. Known issues and quirks
+
+These came up while reviewing the code. They're worth knowing about before you change related areas.
+
+1. **Wrong winner in the status bar.** `updateUI()` calculates the winner as `currentPlayerIndex - 1`. But `endTurn()` doesn't advance the turn when someone wins, so the status text names the *previous* player. The toast and overlay are correct because they use `currentPlayerIndex`.
+2. **Duplicate event listeners.** `setupPlayerTypeSelection()` and `setupAIDifficultySelection()` add listeners every time a player-count button is clicked. After going Back and choosing again, a single click fires several handlers (you'll see duplicate "AI difficulty set to…" toasts, for example).
+3. **No anti-blocking rule.** A player can permanently block an opponent by leaving pieces in that opponent's destination, because `checkWin` requires all 10 destination holes to hold the winner's own pieces.
+4. **Toast exit animation is missing.** `showNotification` uses `slideOutRight`, but there is no `@keyframes slideOutRight` in `style.css`, so toasts disappear without animating.
+5. **README mentions confetti**, but there is no confetti in the code. The win screen is the overlay and toast described above.
+6. **Unused values.** `BOARD_RADIUS`, `turnMovedPiece` (written but never read), and the `window.playerNames` / `window.selectedColorIndices` fallbacks in the constructor.
+7. **`renderColorSwatches` makes a throwaway `ChineseCheckersGame`** just to read `PLAYER_NAMES` and `PLAYER_COLORS`. Those could be module-level constants.
+8. **Seat 0 always moves first.** The comment says "Human player always starts", but if seat 0 is an AI, the AI starts.
+
+---
+
+## 13. Extending the project
+
+- **New AI difficulty:** add a `find<Level>Move` method and a `case` in `findBestMove()`, `shouldContinueJumping()` and `thinkingTimes`. Then add a `.difficulty-btn` with a matching `data-difficulty` in `index.html`.
+- **New player colors:** add `--player6-color` and the matching `.player6` / `.player6-home` classes, then extend `PLAYER_COLORS` and `PLAYER_NAMES`. The swatch loop is currently hard-coded to `< 6`.
+- **Different player counts (for example 5):** add a case to `getPlayerBoardPositions()` and a button in `#player-selection`.
+- **Tests:** there are none yet. The pure logic (`rotateCoord`, `getStartingPieces`, `calculateValidMoves`, `checkWin`, `hexDistance`) could be split out of the DOM-dependent class and tested with Vitest, which works with the existing Vite setup.
