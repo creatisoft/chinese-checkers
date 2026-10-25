@@ -32,7 +32,6 @@ class ChineseCheckersGame {
         this.validBoardCoords = new Set();
         this.playerHomes = [];
         this.playerDestinations = [];
-        this.homeZoneMap = new Map();
         this.activePlayers = [];
         this.currentPlayerIndex = 0;
         this.selectedPiece = null;
@@ -97,14 +96,10 @@ class ChineseCheckersGame {
             tipCoords.forEach(coord => this.validBoardCoords.add(this.coordToString(coord)));
         }
 
-        this.homeZoneMap.clear();
         for (let i = 0; i < this.numPlayers; i++) {
             const boardPosition = playerPositions[i];
             this.playerHomes[i] = this.getStartingPieces(boardPosition);
             this.playerDestinations[i] = this.getStartingPieces((boardPosition + 3) % 6);
-            this.playerHomes[i].forEach(coord => {
-                this.homeZoneMap.set(this.coordToString(coord), i);
-            });
         }
     }
 
@@ -177,9 +172,35 @@ class ChineseCheckersGame {
 
     render() {
         this.svgBoard.innerHTML = '';
+        this.renderHomeZones();
         this.renderBoardHoles();
         this.renderPieces();
         this.renderHighlights();
+    }
+
+    // Painted triangle under each player's starting point, like a real wooden board
+    renderHomeZones() {
+        const frag = document.createDocumentFragment();
+        this.playerHomes.forEach((coords, i) => {
+            const colorIndex = this.playerColors && this.playerColors[i] !== undefined ? this.playerColors[i] : i;
+            const pts = coords.map(c => this.axialToPixel(c.q, c.r));
+            const cx = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+            const cy = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+            const dist = p => Math.hypot(p.x - cx, p.y - cy);
+            // The triangle's corners are the three holes farthest from its center;
+            // push them outward so the paint surrounds the outer holes.
+            const corners = [...pts].sort((a, b) => dist(b) - dist(a)).slice(0, 3);
+            const points = corners.map(p => {
+                const k = (dist(p) + this.HEX_SIZE * 1.3) / dist(p);
+                return `${cx + (p.x - cx) * k},${cy + (p.y - cy) * k}`;
+            }).join(' ');
+
+            const zone = document.createElementNS(this.SVG_NS, 'polygon');
+            zone.setAttribute('points', points);
+            zone.classList.add('home-zone', `player${colorIndex}-home`);
+            frag.appendChild(zone);
+        });
+        this.svgBoard.appendChild(frag);
     }
 
     renderBoardHoles() {
@@ -193,16 +214,6 @@ class ChineseCheckersGame {
             hole.setAttribute('cy', y);
             hole.setAttribute('r', this.HEX_SIZE * 0.45); // Properly scaled: 0.9 * 0.5 = 0.45
             hole.classList.add('hole');
-
-            // Only color home zone holes that still have pieces in them
-            // When a piece moves away, the hole stays black
-            if (this.homeZoneMap.has(coordStr) && this.board.has(coordStr)) {
-                const playerOwner = this.homeZoneMap.get(coordStr);
-                const colorIndex = this.playerColors && this.playerColors[playerOwner] !== undefined ? this.playerColors[playerOwner] : playerOwner;
-                hole.classList.add('home-zone-hole', `player${colorIndex}-home`);
-            }
-
-            // Keep all holes black - no destination zone coloring
             hole.onclick = () => this.handleHoleClick(q, r);
             frag.appendChild(hole);
         });
@@ -226,6 +237,14 @@ class ChineseCheckersGame {
             }
             pieceEl.onclick = () => this.handlePieceClick(q, r, piece.player);
             frag.appendChild(pieceEl);
+
+            // Glass-marble highlight/shading overlay (gradient defined in index.html)
+            const shine = document.createElementNS(this.SVG_NS, 'circle');
+            shine.setAttribute('cx', x);
+            shine.setAttribute('cy', y);
+            shine.setAttribute('r', this.HEX_SIZE * 0.8);
+            shine.classList.add('piece-shine');
+            frag.appendChild(shine);
         });
         this.svgBoard.appendChild(frag);
     }
@@ -239,7 +258,7 @@ class ChineseCheckersGame {
             const moveEl = document.createElementNS(this.SVG_NS, 'circle');
             moveEl.setAttribute('cx', x);
             moveEl.setAttribute('cy', y);
-            moveEl.setAttribute('r', this.HEX_SIZE * 0.25);
+            moveEl.setAttribute('r', this.HEX_SIZE * 0.55); // ring around the hole
             // Not clickable (pointer-events: none) - taps go to the hole underneath,
             // which has a larger touch target.
             moveEl.classList.add('valid-move');

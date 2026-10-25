@@ -38,7 +38,7 @@ chinese-checkers/
 ├── public/
 │   ├── chinesecheckers-logo.png   # Logo shown on the player-count screen
 │   └── vite.svg
-├── index.html               # Markup for all screens + script/style includes
+├── index.html               # Markup for all screens, shared SVG gradients, script/style includes
 ├── script.js                # Game engine, rendering, setup flow, notifications
 ├── ai-player.js             # AI opponent logic
 ├── style.css                # Theme variables, layout, responsive rules
@@ -116,7 +116,7 @@ There are six star points, numbered 0–5. The tip opposite tip `i` is `(i + 3) 
 For each seat `i` the game stores:
 - `playerHomes[i]`: the 10 starting coordinates
 - `playerDestinations[i]`: the 10 coordinates of the opposite tip
-- `homeZoneMap`: maps each home coordinate to its owning seat. It is used to tint occupied home holes.
+- Each seat's home triangle is painted in that seat's color (see Rendering below).
 
 ### Pixel layout
 
@@ -180,13 +180,16 @@ select piece ──► click target
 
 ### Rendering
 
-`render()` clears the SVG and redraws it completely in three layers. Each layer is built in a `DocumentFragment`:
+`render()` clears the SVG and redraws it completely in four layers. Each layer is built in a `DocumentFragment`:
 
-1. `renderBoardHoles()` draws the holes. A home hole is tinted with its owner's color only while a piece sits in it.
-2. `renderPieces()` draws the pieces. The selected piece gets the `.selected` class.
-3. `renderHighlights()` draws small `.valid-move` dots, if `showValidMoves` is on.
+1. `renderHomeZones()` paints a translucent triangle (`.home-zone.playerN-home`) under each seat's starting point. The triangle's corners are the three home holes farthest from the triangle's center, pushed outward by `1.3 × HEX_SIZE`. Its rounded edges come from a thick stroke with `stroke-linejoin: round`.
+2. `renderBoardHoles()` draws the drilled holes (`.hole`).
+3. `renderPieces()` draws each marble as two circles: `.piece` in the player's color, then a `.piece-shine` overlay that adds the glass highlight and edge shading. The selected piece gets the `.selected` class.
+4. `renderHighlights()` draws a glowing `.valid-move` ring around each reachable hole, if `showValidMoves` is on.
 
-Click handlers are attached to holes and pieces as they are drawn (`onclick`). The `.valid-move` dots have `pointer-events: none`, so a tap passes through to the hole underneath. Each `.hole` has a transparent 16-unit stroke that makes its tap target about the size of the hole spacing.
+The gradients these use (`#marble-shine`, `#hole-shade`) are defined in a hidden `<svg><defs>` at the top of `index.html`. They can't live inside `#game-board`, because `render()` wipes that SVG on every redraw.
+
+Click handlers are attached to holes and pieces as they are drawn (`onclick`). The `.valid-move` rings, `.piece-shine` overlays and `.home-zone` triangles have `pointer-events: none`, so taps pass through to the hole or piece underneath. Each `.hole` has a transparent 16-unit stroke that makes its tap target about the size of the hole spacing.
 
 ---
 
@@ -237,23 +240,47 @@ The first `DOMContentLoaded` handler inserts the logo and adds a ripple effect t
 
 ## 10. Styling (`style.css`)
 
+- **Theme: a wooden board game.** Each part of the page is styled as a physical object:
+
+  | Element | Looks like |
+  | --- | --- |
+  | Page background | Dark walnut table with planks and a vignette |
+  | `#game-board-container` | Round honey-oak board with a raised rim |
+  | Holes | Drilled into the wood |
+  | Pieces and color swatches | Glass marbles |
+  | Setup card and status panel | Oak plaques with burned-in text |
+  | Buttons | Lacquered wooden blocks that sink when pressed |
+  | Toggle | Brass knob in a routed groove |
+  | Toasts | Parchment slips |
+  | Winner card | Framed parchment certificate |
+
+  Everything is CSS gradients and inline SVG, with no image files.
 - **Theme tokens** live on `:root`:
-  - board: `--hole-color`, `--highlight-color`, `--valid-move-color`
+  - wood and lacquer: `--oak`, `--walnut`, `--mahogany`, `--lacquer-green`, `--brass`, `--parchment`, and so on
+  - text: `--ink` for text on light wood or parchment, `--engraved` for the gilded title
   - players: `--player0-color` … `--player5-color` (Cyan, White, Green, Yellow, Dark Gray, Red)
-  - UI: `--primary-bg`, `--accent-color`, `--card-bg`, `--text-primary`, and so on
-- **Piece and home classes** `.playerN` and `.playerN-home` map to those tokens. White (`player1`) and dark gray (`player4`) pieces get contrasting strokes so they stand out on the board.
+  - `--rim`: the board rim thickness, smaller on small screens
+- **`--grain`** is a tileable wood-grain texture: an inline SVG data URI using `feTurbulence`, drawn as translucent brown streaks. It's layered over a solid base color, so the same texture works for the table, board, plaques and buttons. The filters set `x/y/width/height` to the tile bounds; without that, `stitchTiles` stitches at the default filter region and the tiles show a seam.
+- **`--marble-shine`** is the CSS version of the SVG `#marble-shine` gradient, used for HTML marbles (color swatches and the turn indicator).
+- **Buttons** set `--btn-face` and `--btn-edge`. To add a button variant, override those two variables (see `#end-turn-btn` and `#back-to-players-btn`).
+- **Piece and home classes** `.playerN` and `.playerN-home` map to the player color tokens. `.playerN-home` sets both fill and stroke, because the triangle's rounded edge is drawn with its stroke.
+- **Fonts**: Cinzel for titles. Lora for body text and anything containing a player number or name, because Cinzel's "1" looks like an "I".
 - **Board sizing**: `--board-size` on `:root` sets the SVG's width and height. It's the largest square that fits after the title and status bar, capped at 900px. `--vh` is `100dvh` where supported, so mobile browser toolbars are taken into account.
 - **Layouts**:
   - Portrait (default): status bar above the board.
   - `(orientation: landscape) and (min-width: 900px)`: status panel in a column to the left of the board, so the board can use the full height.
 - **Touch** (`pointer: coarse`): buttons and color swatches are at least 44px, the toggle is larger, the name field uses 16px text so iOS doesn't zoom in, and toasts move to the bottom (bottom-left in landscape) so they don't cover the controls. Toasts never take taps (`pointer-events: none`).
 - **Hover effects** are inside `@media (hover: hover)`, so they don't stay on after a tap on touch screens.
-- **Size breakpoints**: `max-width: 1024px` (slimmer board frame, no background effects) and `max-width: 480px` (compact status bar and winner overlay).
+- **Size breakpoints**:
+  - `max-width: 1024px`: thinner board rim (`--rim: 7px`) and padding, a narrower setup card, and the Player Type and AI Difficulty trays stacked.
+  - `max-width: 480px`: `--rim: 5px`, a compact status bar, and a smaller winner card.
 - **Safe areas**: `.container` padding uses `env(safe-area-inset-*)`, because the viewport is `viewport-fit=cover`.
 - **Accessibility**: a `prefers-reduced-motion: reduce` block turns animations down.
 - **Mobile**: the viewport meta disables zoom, and Apple web-app metas allow a full-screen home-screen launch.
 
 > The color names in `PLAYER_NAMES` (`"Blue"`, `"Black"`) don't quite match the CSS colors (cyan, dark gray). They only appear as swatch tooltips and fallback names.
+
+> `renderColorSwatches()` in `script.js` sets inline borders on the white and dark-gray swatches. Those borders were for the old flat theme. `.color-swatch` overrides them with `border: none !important`, because the marble shading already separates those colors from the wood. If you remove the inline borders from the JS, you can drop the `!important`.
 
 ---
 
@@ -261,7 +288,7 @@ The first `DOMContentLoaded` handler inserts the logo and adds a ripple effect t
 
 - `vite.config.js` sets `base: './'`, so the built site uses **relative** asset paths and works from any subdirectory (for example GitHub Pages). The comment in the file still mentions `'/'`, but `'./'` is what's actually set.
 - Files in `public/` are copied as-is to the root of `dist/`. That's why the logo is loaded as `'chinesecheckers-logo.png'`, with no `public/` prefix.
-- Fonts come from Google Fonts (Poppins), and analytics come from Simple Analytics (`scripts.simpleanalyticscdn.com`). Both are loaded at runtime, so the page needs network access for them.
+- Fonts come from Google Fonts (Cinzel, Lora), and analytics come from Simple Analytics (`scripts.simpleanalyticscdn.com`). Both are loaded at runtime, so the page needs network access for them.
 
 ---
 
@@ -273,10 +300,9 @@ These came up while reviewing the code. They're worth knowing about before you c
 2. **Duplicate event listeners.** `setupPlayerTypeSelection()` and `setupAIDifficultySelection()` add listeners every time a player-count button is clicked. After going Back and choosing again, a single click fires several handlers (you'll see duplicate "AI difficulty set to…" toasts, for example).
 3. **No anti-blocking rule.** A player can permanently block an opponent by leaving pieces in that opponent's destination, because `checkWin` requires all 10 destination holes to hold the winner's own pieces.
 4. **Toast exit animation is missing.** `showNotification` uses `slideOutRight`, but there is no `@keyframes slideOutRight` in `style.css`, so toasts disappear without animating.
-5. **README mentions confetti**, but there is no confetti in the code. The win screen is the overlay and toast described above.
-6. **Unused values.** `BOARD_RADIUS`, `turnMovedPiece` (written but never read), and the `window.playerNames` / `window.selectedColorIndices` fallbacks in the constructor.
-7. **`renderColorSwatches` makes a throwaway `ChineseCheckersGame`** just to read `PLAYER_NAMES` and `PLAYER_COLORS`. Those could be module-level constants.
-8. **Seat 0 always moves first.** The comment says "Human player always starts", but if seat 0 is an AI, the AI starts.
+5. **Unused values.** `BOARD_RADIUS`, `turnMovedPiece` (written but never read), and the `window.playerNames` / `window.selectedColorIndices` fallbacks in the constructor.
+6. **`renderColorSwatches` makes a throwaway `ChineseCheckersGame`** just to read `PLAYER_NAMES` and `PLAYER_COLORS`. Those could be module-level constants.
+7. **Seat 0 always moves first.** The comment says "Human player always starts", but if seat 0 is an AI, the AI starts.
 
 ---
 
@@ -285,4 +311,69 @@ These came up while reviewing the code. They're worth knowing about before you c
 - **New AI difficulty:** add a `find<Level>Move` method and a `case` in `findBestMove()`, `shouldContinueJumping()` and `thinkingTimes`. Then add a `.difficulty-btn` with a matching `data-difficulty` in `index.html`.
 - **New player colors:** add `--player6-color` and the matching `.player6` / `.player6-home` classes, then extend `PLAYER_COLORS` and `PLAYER_NAMES`. The swatch loop is currently hard-coded to `< 6`.
 - **Different player counts (for example 5):** add a case to `getPlayerBoardPositions()` and a button in `#player-selection`.
+- **Changing the look:**
+  - Colors and wood tones are the tokens on `:root`. Change `--oak` and `--walnut` for a lighter or darker board, and `--mahogany` / `--lacquer-green` for the buttons.
+  - The grain strength is set by the last row of each `feColorMatrix` in `--grain`: the alpha multiplier and offset (for example `1.6 … -0.62`). A bigger multiplier or a smaller negative offset gives darker, denser grain.
+  - The marble look is the `#marble-shine` gradient in `index.html` and `--marble-shine` in CSS. Keep the two in sync.
+  - The painted triangle size is the `1.3 × HEX_SIZE` outward push in `renderHomeZones()`, plus the `.home-zone` stroke width. Make them larger and the paint starts touching the central holes.
 - **Tests:** there are none yet. The pure logic (`rotateCoord`, `getStartingPieces`, `calculateValidMoves`, `checkWin`, `hexDistance`) could be split out of the DOM-dependent class and tested with Vitest, which works with the existing Vite setup.
+
+---
+
+## 14. Checking UI changes
+
+There are no automated UI tests. After changing layout or styling, check the game at these sizes, in browser dev tools or on real devices:
+
+| Device | Viewport | Layout |
+| --- | --- | --- |
+| iPad mini, portrait | 768 × 1024 | Status bar above the board |
+| iPad Air, portrait | 820 × 1180 | Status bar above the board |
+| iPad Air, landscape | 1180 × 820 | Status panel beside the board |
+| iPad Pro 12.9", landscape | 1366 × 1024 | Status panel beside the board, board at 900px cap |
+| Phone | 390 × 844 | Compact status bar |
+| Desktop | 1440 × 900 | Status panel beside the board, mouse hover effects |
+
+Turn on touch emulation for the tablet and phone sizes; without it, the `pointer: coarse` styles don't apply. At each size, check:
+
+- **Board:** all 121 holes and every star point are fully inside the board.
+- **Scrolling:** the page doesn't scroll sideways.
+- **Tap targets:** buttons and color swatches are at least 44px tall on touch devices.
+- **Tapping holes:** a tap slightly off-center on a highlighted hole still makes the move.
+- **Toasts:** they don't cover the status panel or controls.
+- **Winner card:** it fits on screen. In the console, run `showGameOverlay('Player 1')` to show it.
+
+To try it on a real tablet over Wi-Fi, run `npx vite --host` and open the "Network" URL it prints on the tablet.
+
+---
+
+## 15. Change history
+
+### Tablet-friendly layout
+
+**Problem:** on screens 1024px wide or narrower, CSS shrank the SVG to 350px, but the JS still placed holes for a 600px board. On an iPad in portrait, 36 holes and pieces were cut off. On top of that:
+
+- Buttons were about 30px tall, and the tap target on a hole was only 18px.
+- Hover effects stayed on after a tap.
+- Toasts covered the status panel.
+
+**Changes:**
+
+- **Board scaling:** the board now uses a fixed `viewBox`, and CSS sizes it with `--board-size`. The JS no longer reads the screen size, which also fixed the board going off-center after a rotation.
+- **Layout:** the status bar and board are in normal flow instead of absolutely positioned. Landscape screens get a side panel.
+- **Touch:** the touch sizing, toast placement and safe-area padding described in §10.
+- **Hover:** hover effects only apply on devices that can hover.
+- **Fixes:**
+  - the name field spilled past the edge of the setup card
+  - the hidden winner card made phones scroll sideways
+  - `.selected` was unscoped, so the setup buttons got the selected piece's glow
+
+### Wooden board-game theme
+
+**Problem:** the purple, glassy look didn't feel like a board game.
+
+**Changes:**
+
+- **Look:** the UI was restyled as physical objects: a wooden table and board, glass marbles, plaques, pressable wooden buttons and parchment (table in §10).
+- **New rendering:** `renderHomeZones()` and the marble `.piece-shine` overlay (§6).
+- **Home triangles (behavior change):** before, a home hole was tinted only while a piece sat in it. Now each player's whole starting triangle stays painted for the entire game, like a real board. The unused `homeZoneMap` was removed.
+- **Fonts:** Cinzel and Lora replace Poppins.

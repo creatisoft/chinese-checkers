@@ -15,9 +15,9 @@ A modern, responsive implementation of the classic Chinese Checkers board game t
   - 🔴 Hard - for experienced players
 - 🎨 Customizable player colors and names
 - 📱 Fully responsive design - works on desktops, tablets, and phones
-- 🌈 Beautiful animated UI with vibrant colors
+- 🪵 Classic wooden board-game look - oak board, glass marbles, painted home triangles
 - 🔍 Highlight valid moves feature
-- 🎉 Winner celebration with confetti
+- 🎉 Winner certificate when someone wins
 
 ## 🕹️ How to Play
 
@@ -60,9 +60,13 @@ npm run dev
 ## 📱 Mobile Support
 
 The game is fully optimized for mobile devices with:
-- Touch-friendly controls
-- Responsive layout that adapts to any screen size
+- Touch-friendly controls (44px+ tap targets, generous tap areas around each hole)
+- A board that scales to fill the screen, with the status panel above it in portrait and beside it in landscape
 - Performance optimizations for smooth gameplay on all devices
+
+## 📚 Documentation
+
+See [docs/c-checkers.md](docs/c-checkers.md) for how the game is built, including the board model, AI, styling and theme, and how to check UI changes.
 
 ## 🌐 Browser Compatibility
 
