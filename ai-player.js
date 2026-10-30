@@ -112,20 +112,17 @@ class ChineseCheckersAI {
             for (const move of moves) {
                 let score = 0;
                 
-                // Distance to destination improvement
-                const currentDist = this.getMinDistanceToDestination(piece, destination);
-                const newDist = this.getMinDistanceToDestination(move, destination);
+                // Progress toward the destination's far tip
+                const currentDist = this.getDistanceToGoal(piece, destination);
+                const newDist = this.getDistanceToGoal(move, destination);
                 score += (currentDist - newDist) * 10;
-                
+
                 // Bonus for jump moves
                 if (this.isJumpMove(piece, move)) {
                     score += 5;
                 }
-                
-                // Bonus for reaching destination
-                if (this.isInDestination(move, destination)) {
-                    score += 15;
-                }
+
+                score += this.destinationEntryScore(piece, move, destination, 15);
                 
                 // Small random factor
                 score += Math.random() * 2;
@@ -148,20 +145,18 @@ class ChineseCheckersAI {
         let bestScore = -Infinity;
         
         const destination = this.game.playerDestinations[playerIndex];
-        const nonDestinationPieces = pieces.filter(p => !this.isInDestination(p, destination));
-        
-        // Prioritize pieces not in destination
-        const piecesToEvaluate = nonDestinationPieces.length > 0 ? nonDestinationPieces : pieces;
-        
-        for (const piece of piecesToEvaluate) {
+
+        // All pieces are considered, including ones already in the destination:
+        // moving those deeper is what makes room for the last pieces to get in.
+        for (const piece of pieces) {
             const moves = this.getValidMovesForPiece(piece);
-            
+
             for (const move of moves) {
                 let score = 0;
-                
-                // Distance improvement (heavily weighted)
-                const currentDist = this.getMinDistanceToDestination(piece, destination);
-                const newDist = this.getMinDistanceToDestination(move, destination);
+
+                // Progress toward the destination's far tip (heavily weighted)
+                const currentDist = this.getDistanceToGoal(piece, destination);
+                const newDist = this.getDistanceToGoal(move, destination);
                 score += (currentDist - newDist) * 15;
                 
                 // Jump chain potential
@@ -172,14 +167,11 @@ class ChineseCheckersAI {
                     score += continuingJumps.length * 3;
                 }
                 
-                // Reaching destination bonus
-                if (this.isInDestination(move, destination)) {
-                    score += 20;
-                }
-                
-                // Avoid getting stuck in corners (penalty for moving away from center)
+                score += this.destinationEntryScore(piece, move, destination, 20);
+
+                // Avoid getting stuck in other players' corners (penalty for moving away from center)
                 const centerDistance = Math.abs(move.q) + Math.abs(move.r) + Math.abs(move.q + move.r);
-                if (centerDistance > 6) score -= 2;
+                if (centerDistance > 6 && !this.isInDestination(move, destination)) score -= 2;
                 
                 // Small random factor for variety
                 score += Math.random() * 1;
@@ -206,14 +198,20 @@ class ChineseCheckersAI {
             return;
         }
         
+        const seat = this.game.currentPlayerIndex;
+
         // First, select the piece
         this.game.selectPiece(move.from.q, move.from.r);
         await this.sleep(300);
-        
+
         // Then make the move
         this.game.movePiece(move.from, move.to);
         await this.sleep(300);
-        
+
+        // A single step ends the turn inside movePiece(). Stop here so we never act
+        // on the next player's turn (they may already be jumping).
+        if (this.game.currentPlayerIndex !== seat || this.game.gameOver) return;
+
         // If it was a jump and AI can continue jumping, decide whether to continue
         if (this.game.turnState === 'jumping' && this.shouldContinueJumping(move.to, jumpCount)) {
             const nextMove = this.findBestContinuationJump(move.to);
@@ -253,11 +251,11 @@ class ChineseCheckersAI {
                 // Always continue if there's significant progress toward goal
                 const currentPlayer = this.game.activePlayers[this.game.currentPlayerIndex];
                 const destination = this.game.playerDestinations[currentPlayer];
-                const currentDist = this.getMinDistanceToDestination(position, destination);
+                const currentDist = this.getDistanceToGoal(position, destination);
                 
                 // Check if any jump makes significant progress
                 const bestJumpProgress = Math.max(...jumps.map(jump => {
-                    const newDist = this.getMinDistanceToDestination(jump, destination);
+                    const newDist = this.getDistanceToGoal(jump, destination);
                     return currentDist - newDist;
                 }));
                 
@@ -285,8 +283,8 @@ class ChineseCheckersAI {
         let bestScore = -Infinity;
         
         for (const jump of jumps) {
-            const currentDist = this.getMinDistanceToDestination(position, destination);
-            const newDist = this.getMinDistanceToDestination(jump, destination);
+            const currentDist = this.getDistanceToGoal(position, destination);
+            const newDist = this.getDistanceToGoal(jump, destination);
             const score = currentDist - newDist;
             
             if (score > bestScore) {
@@ -325,8 +323,8 @@ class ChineseCheckersAI {
     filterForwardMoves(moves, piece, playerIndex) {
         const destination = this.game.playerDestinations[playerIndex];
         return moves.filter(move => {
-            const currentDist = this.getMinDistanceToDestination(piece, destination);
-            const newDist = this.getMinDistanceToDestination(move, destination);
+            const currentDist = this.getDistanceToGoal(piece, destination);
+            const newDist = this.getDistanceToGoal(move, destination);
             return newDist < currentDist;
         });
     }
@@ -351,15 +349,31 @@ class ChineseCheckersAI {
     }
 
     /**
-     * Calculate minimum distance to any point in destination
+     * Distance to the destination's far tip (the hole farthest from the board center).
+     * Measuring to the nearest destination hole instead made every hole in the
+     * triangle count the same, so pieces stopped at its edge and the back never filled.
      */
-    getMinDistanceToDestination(position, destination) {
-        let minDist = Infinity;
-        for (const dest of destination) {
-            const dist = this.hexDistance(position, dest);
-            minDist = Math.min(minDist, dist);
+    getDistanceToGoal(position, destination) {
+        if (!this._goalTips) this._goalTips = new Map();
+        let tip = this._goalTips.get(destination);
+        if (!tip) {
+            const fromCenter = c => this.hexDistance(c, { q: 0, r: 0 });
+            tip = destination.reduce((far, c) => (fromCenter(c) > fromCenter(far) ? c : far));
+            this._goalTips.set(destination, tip);
         }
-        return minDist;
+        return this.hexDistance(position, tip);
+    }
+
+    /**
+     * Bonus for entering the destination, penalty for leaving it.
+     * Moves that stay inside the triangle score only on progress.
+     */
+    destinationEntryScore(from, to, destination, bonus) {
+        const wasIn = this.isInDestination(from, destination);
+        const isIn = this.isInDestination(to, destination);
+        if (!wasIn && isIn) return bonus;
+        if (wasIn && !isIn) return -bonus * 2;
+        return 0;
     }
 
     /**

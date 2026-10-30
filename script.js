@@ -37,7 +37,8 @@ class ChineseCheckersGame {
         this.selectedPiece = null;
         this.validMoves = [];
         this.turnState = 'select';
-        this.turnMovedPiece = null;
+        this.turnVisited = new Set(); // holes the moving piece has touched this turn
+        this.jumpParents = new Map();
         this.gameOver = false;
         this.aiPlayers = new Map(); // Map of player index to AI instance
         this.isAITurn = false;
@@ -47,10 +48,16 @@ class ChineseCheckersGame {
         this.showValidMoves = true;
     }
 
-    init() {
+    // saved: optional state from loadSavedGame() to resume instead of starting fresh
+    init(saved = null) {
         this.setupPlayerConfig();
         this.createBoardLayout();
         this.populateInitialPieces();
+        if (saved) {
+            this.board = new Map(saved.board);
+            this.currentPlayerIndex = saved.currentPlayerIndex;
+        }
+        this.saveGame();
         this.bindEvents();
         this.updateUI();
         this.render();
@@ -324,7 +331,10 @@ class ChineseCheckersGame {
 
     calculateValidMoves(q, r) {
         this.validMoves = [];
-        const visited = new Set([this.coordToString({ q, r })]);
+        this.jumpParents = new Map(); // landing hole -> hole it was jumped from (to rebuild chain paths)
+        // A piece may not land on any hole it already touched this turn
+        // (including where it started), so it can't hop back and forth.
+        const visited = new Set([...this.turnVisited, this.coordToString({ q, r })]);
 
         if (this.turnState === 'select') {
             for (let i = 0; i < 6; i++) {
@@ -346,6 +356,7 @@ class ChineseCheckersGame {
             if (this.validBoardCoords.has(jumpToStr) && this.board.has(this.coordToString(neighbor)) && !this.board.has(jumpToStr) && !visited.has(jumpToStr)) {
                 this.validMoves.push(jumpTo);
                 visited.add(jumpToStr);
+                this.jumpParents.set(jumpToStr, this.coordToString({ q, r }));
                 this.findJumps(jumpTo.q, jumpTo.r, visited);
             }
         }
@@ -362,9 +373,14 @@ class ChineseCheckersGame {
         const dy = to.r - from.r;
         const isJump = Math.abs(dx) > 1 || Math.abs(dy) > 1 || Math.abs(dx + dy) > 1;
 
+        // Record every hole this move touched, including the middle of a multi-hop chain
+        this.turnVisited.add(fromStr);
+        for (let hole = toStr; hole && hole !== fromStr; hole = this.jumpParents.get(hole)) {
+            this.turnVisited.add(hole);
+        }
+
         this.selectedPiece = null;
         this.validMoves = [];
-        this.turnMovedPiece = to;
 
         if (isJump) {
             this.turnState = 'jumping';
@@ -383,9 +399,29 @@ class ChineseCheckersGame {
         this.updateUI();
     }
 
+    // Saved at every turn boundary so a page reload (tablet discarding the tab,
+    // a refresh gesture) resumes the game. A reload mid-turn resumes at the start
+    // of that turn.
+    saveGame() {
+        try {
+            localStorage.setItem(SAVE_KEY, JSON.stringify({
+                numPlayers: this.numPlayers,
+                playerTypes: this.playerTypes,
+                playerDifficulties: this.playerDifficulties,
+                playerNames: this.playerNames,
+                playerColors: this.playerColors,
+                currentPlayerIndex: this.currentPlayerIndex,
+                board: [...this.board],
+            }));
+        } catch (e) {
+            // Storage unavailable (e.g. private browsing): the game just isn't resumable
+        }
+    }
+
     endTurn() {
         if (this.checkWin(this.currentPlayerIndex)) {
             this.gameOver = true;
+            clearSavedGame();
             const winnerName = this.playerNames && this.playerNames[this.currentPlayerIndex] 
                 ? this.playerNames[this.currentPlayerIndex] 
                 : this.PLAYER_NAMES[this.currentPlayerIndex];
@@ -399,14 +435,19 @@ class ChineseCheckersGame {
                 ? this.playerNames[this.currentPlayerIndex] 
                 : this.PLAYER_NAMES[this.currentPlayerIndex];
             showNotification(`${newPlayerName}'s turn`, 'info', 2000);
-            
-            // Check if it's now an AI player's turn
+
+            // The turn changes here, so input is unblocked here too (checkForAITurn
+            // blocks it again if the next player is an AI). Waiting for the previous
+            // AI's promise instead left taps ignored for a moment after AI step moves.
+            this.isAITurn = false;
+            this.endTurnBtn.disabled = false;
+            this.saveGame();
             this.checkForAITurn();
         }
         this.selectedPiece = null;
         this.validMoves = [];
         this.turnState = 'select';
-        this.turnMovedPiece = null;
+        this.turnVisited = new Set(); // holes the moving piece has touched this turn
         this.updateUI();
         this.render();
     }
@@ -428,13 +469,8 @@ class ChineseCheckersGame {
                 // Disable user input during AI turn
                 this.endTurnBtn.disabled = true;
                 
-                // Trigger AI turn after a brief delay
-                setTimeout(() => {
-                    aiPlayer.executeAITurn().then(() => {
-                        this.isAITurn = false;
-                        this.endTurnBtn.disabled = false;
-                    });
-                }, 500);
+                // Trigger AI turn after a brief delay; endTurn() unblocks input when it finishes
+                setTimeout(() => aiPlayer.executeAITurn(), 500);
             }
         }
     }
@@ -444,6 +480,35 @@ class ChineseCheckersGame {
             const piece = this.board.get(this.coordToString(coord));
             return piece && piece.player === playerIndex;
         });
+    }
+}
+
+// --- PWA: offline support / installable ---
+// Production builds only; in dev the cache would serve stale files over Vite's updates.
+// Browsers only allow this on HTTPS or localhost.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker not registered:', err));
+    });
+}
+
+// --- Saved game ---
+const SAVE_KEY = 'chinese-checkers-saved-game';
+
+function loadSavedGame() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
+        return saved && Array.isArray(saved.board) && saved.numPlayers ? saved : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearSavedGame() {
+    try {
+        localStorage.removeItem(SAVE_KEY);
+    } catch (e) {
+        // Storage unavailable - nothing to clear
     }
 }
 
@@ -814,18 +879,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         showNotification('🎮 Starting new game...', 'info', 2000);
-        setupScreen.style.display = 'none';
-        gameScreen.style.display = 'flex';
-        
-        // Create game with new per-player AI system
-        game = new ChineseCheckersGame(svgBoard, selectedPlayerCount, playerTypes.slice(), playerDifficulties.slice());
-        game.playerNames = playerNames.slice(); // Save names for later use
-        game.playerColors = selectedColorIndices.slice(); // Save colors for later use
-        game.init();
-        hideGameOverlay();
+        startGame({
+            numPlayers: selectedPlayerCount,
+            playerTypes: playerTypes.slice(),
+            playerDifficulties: playerDifficulties.slice(),
+            playerNames: playerNames.slice(),
+            playerColors: selectedColorIndices.slice(),
+        });
     });
 
+    // config: numPlayers, playerTypes, playerDifficulties, playerNames, playerColors
+    // (a saved game has the same fields plus the board, so it can be passed as both)
+    function startGame(config, saved = null) {
+        setupScreen.style.display = 'none';
+        gameScreen.style.display = 'flex';
+
+        // Create game with new per-player AI system
+        game = new ChineseCheckersGame(svgBoard, config.numPlayers, config.playerTypes, config.playerDifficulties);
+        game.playerNames = config.playerNames;
+        game.playerColors = config.playerColors;
+        game.init(saved);
+        hideGameOverlay();
+    }
+
+    // Resume a game that was interrupted by a page reload
+    const savedGame = loadSavedGame();
+    if (savedGame) {
+        startGame(savedGame, savedGame);
+        showNotification('♻️ Resumed your game', 'info', 2500);
+    }
+
     restartBtn.addEventListener('click', () => {
+        clearSavedGame();
         showNotification('🔄 Restarting game...', 'info', 1500);
         gameScreen.style.display = 'none';
         colorSelectionContainer.style.display = 'none';

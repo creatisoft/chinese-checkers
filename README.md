@@ -18,6 +18,8 @@ A modern, responsive implementation of the classic Chinese Checkers board game t
 - 🪵 Classic wooden board-game look - oak board, glass marbles, painted home triangles
 - 🔍 Highlight valid moves feature
 - 🎉 Winner certificate when someone wins
+- 📲 Installable app (PWA) that works offline
+- 💾 Games are saved after every turn and resume if the page reloads
 
 ## 🕹️ How to Play
 
@@ -49,7 +51,12 @@ npm install
 
 # Start the development server
 npm run dev
+
+# Play on a tablet/phone on the same Wi-Fi (production build; don't use the dev server for real games)
+npm run host
 ```
+
+To install it as an app (offline play), serve it over HTTPS. See [docs/c-checkers.md](docs/c-checkers.md#pwa-install-to-home-screen-offline-play).
 
 ## 🛠️ Technologies Used
 

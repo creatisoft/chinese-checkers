@@ -62,6 +62,13 @@
     :root { --vh: 100dvh; }
 }
 
+/* Disable pull-to-refresh / overscroll bounce: on tablets a downward drag on the
+   board would reload the page and wipe the game in progress. */
+html,
+body {
+    overscroll-behavior: none;
+}
+
 body {
     font-family: 'Lora', Georgia, 'Times New Roman', serif;
     display: flex;
@@ -501,7 +508,10 @@ h1 {
     width: var(--board-size);
     height: var(--board-size);
     overflow: visible;
-    touch-action: manipulation; /* no double-tap zoom delay on taps */
+    /* No browser gestures start on the board (scroll, pull-to-refresh, zoom).
+       Taps still produce clicks. Matters for styluses, whose strokes often
+       begin as a tap on a marble and drift into a drag. */
+    touch-action: none;
     /* Prevent rendering shifts on mobile */
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
