@@ -177,9 +177,11 @@ If you add new game state that matters after a reload, add it to `saveGame()` an
 
 ### Move generation (`calculateValidMoves`)
 
-- In the `'select'` state, the targets are every empty adjacent hole (a single step) **plus** every hole reachable by jumping.
-- In the `'jumping'` state, the targets are jumps only.
-- `findJumps` searches recursively. A jump goes over an occupied neighbor (anyone's piece) into the empty hole directly beyond it. Every hole reachable by a chain of jumps becomes a target, so one click can complete a multi-hop chain. A `visited` set stops the search from looping.
+- In the `'select'` state, the targets are every empty adjacent hole (a single step) **plus** every single hop.
+- In the `'jumping'` state, the targets are hops only.
+- `getJumpTargets` returns single hops. A hop goes over one occupied neighbor (anyone's piece) into the empty hole directly beyond it. Chains are played one hop per tap. A piece can't land on a hole it already touched this turn (`turnVisited`).
+- **Forward-only (house rule):** standard Chinese Checkers allows moves in all six directions. This game doesn't allow backward moves. `getForwardRow` gives a hole's row along the line from the seat's home to its far destination tip (`playerGoalTips`), and `isBackward` rejects any step or hop to a lower row. Every seat gets 2 forward, 2 sideways and 2 backward directions. Sideways stays legal because a piece on the row in front of the destination may have to slide along it to get in.
+- **Passing:** `passStuckPlayers` skips a player with no legal move. If nobody can move, the game is a draw.
 
 ### Turn sequence
 
@@ -192,10 +194,11 @@ select piece ──► click target
 ```
 
 `endTurn()`:
-1. Calls `checkWin(currentPlayerIndex)`, which is true when all 10 destination holes hold that player's pieces.
+1. Calls `checkWin(currentPlayerIndex)`, which is true when all 10 destination holes are occupied and at least one holds that player's piece. Counting opponents' pieces is the anti-blocking rule: since nobody can move backward, a piece left behind in a full destination could never be freed.
 2. On a win, it sets `gameOver`, shows a toast, and shows the winner overlay 500 ms later. The overlay hides itself after 5 s.
-3. Otherwise, it moves on to the next seat and calls `checkForAITurn()`.
-4. Either way, it resets the selection, valid moves and `turnState`, then re-renders.
+3. Otherwise, it moves on to the next seat, passes anyone who is stuck, and calls `checkForAITurn()`.
+
+It resets the selection, valid moves and `turnState` first, because the pass check needs them cleared.
 
 ### Rendering
 
@@ -223,13 +226,13 @@ Each AI seat has its own `ChineseCheckersAI(game, difficulty)` instance. Its tur
 
 ### Strategies
 
-All distances are hex distances to the **nearest** destination hole (`getMinDistanceToDestination`).
+All distances are hex distances to the destination's **far tip** (`getDistanceToGoal`). Because chains are played one hop at a time, Medium and Hard also score the progress a first hop can lead to (`chainGain`). They only continue a chain if it ends closer to the goal (`getProgressingJumps`), so the AI never takes a jump just because one is available.
 
 | Difficulty | Move choice | Continue jumping? |
 | --- | --- | --- |
 | **Easy** | Shuffles its pieces and takes the first one that can move. 60% of the time it prefers a forward move, otherwise any random move. | 40% chance |
-| **Medium** | Greedy score: `distanceGain × 10`, +5 for a jump, +15 for landing in the destination, plus up to 2 random. | 70% chance |
-| **Hard** | Ignores pieces already in the destination (unless all of them are). Score: `distanceGain × 15`, +8 for a jump, +3 per follow-up jump available, +20 for landing in the destination, −2 for straying far from the center, plus up to 1 random. | Stops after 3 continuations. Otherwise continues if a jump gains ≥ 1 distance, or 60% of the time. |
+| **Medium** | Greedy score: `distanceGain × 10`, `openHoleGain × 10`, `chainGain × 10`, +5 for a jump that progresses, +15 for landing in the destination, plus up to 2 random. | 70% chance, if the chain progresses |
+| **Hard** | Score: `distanceGain × 15`, `openHoleGain × 15`, `chainGain × 15`, +8 for a jump that progresses, +20 for landing in the destination, −2 for straying far from the center, plus up to 1 random. | Always, if the chain progresses |
 
 Jump chains are capped at `MAX_JUMPS = 10` as a backstop.
 
@@ -346,11 +349,10 @@ These came up while reviewing the code. They're worth knowing about before you c
 
 1. **Wrong winner in the status bar.** `updateUI()` calculates the winner as `currentPlayerIndex - 1`. But `endTurn()` doesn't advance the turn when someone wins, so the status text names the *previous* player. The toast and overlay are correct because they use `currentPlayerIndex`.
 2. **Duplicate event listeners.** `setupPlayerTypeSelection()` and `setupAIDifficultySelection()` add listeners every time a player-count button is clicked. After going Back and choosing again, a single click fires several handlers (you'll see duplicate "AI difficulty set to…" toasts, for example).
-3. **No anti-blocking rule.** A player can permanently block an opponent by leaving pieces in that opponent's destination, because `checkWin` requires all 10 destination holes to hold the winner's own pieces.
-4. **Toast exit animation is missing.** `showNotification` uses `slideOutRight`, but there is no `@keyframes slideOutRight` in `style.css`, so toasts disappear without animating.
-5. **Unused values.** `BOARD_RADIUS`, `turnMovedPiece` (written but never read), and the `window.playerNames` / `window.selectedColorIndices` fallbacks in the constructor.
-6. **`renderColorSwatches` makes a throwaway `ChineseCheckersGame`** just to read `PLAYER_NAMES` and `PLAYER_COLORS`. Those could be module-level constants.
-7. **Seat 0 always moves first.** The comment says "Human player always starts", but if seat 0 is an AI, the AI starts.
+3. **Toast exit animation is missing.** `showNotification` uses `slideOutRight`, but there is no `@keyframes slideOutRight` in `style.css`, so toasts disappear without animating.
+4. **Unused values.** `BOARD_RADIUS`, `turnMovedPiece` (written but never read), and the `window.playerNames` / `window.selectedColorIndices` fallbacks in the constructor.
+5. **`renderColorSwatches` makes a throwaway `ChineseCheckersGame`** just to read `PLAYER_NAMES` and `PLAYER_COLORS`. Those could be module-level constants.
+6. **Seat 0 always moves first.** The comment says "Human player always starts", but if seat 0 is an AI, the AI starts.
 
 ---
 
@@ -457,3 +459,19 @@ To try it on a real tablet over Wi-Fi, run `npm run host` and open the "Network"
 
 - **Resume:** after a reload, the board, current player, names, colors and AI seats came back identically, and New Game cleared the save.
 - **Offline:** on the production build, the service worker cached the app on the first visit. With the server stopped, a reload loaded the app from the cache and resumed the game.
+
+### Forward-only rules and AI retreats
+
+**Report:** the AI jumped backward and then ended its turn, and a player's piece could jump over two balls with no space. The request was to allow only forward moves.
+
+**Findings:**
+
+- **AI retreats:** `findBestContinuationJump` took the best available jump even when every option lost ground, and the AI decided to continue mostly at random. In headless AI-vs-AI games, 28–33% of Easy's moves and up to 12% of Medium and Hard's moves went backward.
+- **"Jumping two balls":** a straight jump over two touching balls was already refused. But one tap could complete a whole chain, so a piece could land past a wall of balls after an unseen detour, or two holes away with nothing between.
+
+**Changes:**
+
+- **Rules:** no backward moves, one hop per tap, passing, a draw when nobody can move, and the anti-blocking win rule (§6).
+- **AI:** it continues only along chains that make progress, and no longer gets a jump bonus for hops that gain nothing (§7). `openHoleScore` steers its last pieces to the holes still open.
+
+**Verified:** 360 headless AI-vs-AI games (30 for each difficulty and player count) all finished, with no backward moves. Scripted tests covered human hop-by-hop play, passing, the draw and the win rule. Every hole can reach every seat's destination using only legal directions. `npm run build` passes.

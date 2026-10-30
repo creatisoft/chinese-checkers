@@ -32,14 +32,15 @@ class ChineseCheckersGame {
         this.validBoardCoords = new Set();
         this.playerHomes = [];
         this.playerDestinations = [];
+        this.playerGoalTips = []; // far tip of each seat's destination; defines "forward"
         this.activePlayers = [];
         this.currentPlayerIndex = 0;
         this.selectedPiece = null;
         this.validMoves = [];
         this.turnState = 'select';
         this.turnVisited = new Set(); // holes the moving piece has touched this turn
-        this.jumpParents = new Map();
         this.gameOver = false;
+        this.isDraw = false;
         this.aiPlayers = new Map(); // Map of player index to AI instance
         this.isAITurn = false;
         // Add these for custom names/colors
@@ -72,8 +73,11 @@ class ChineseCheckersGame {
             }
         }
         
-        // Check if first player is AI
-        this.checkForAITurn();
+        // A resumed game can start on a player with nothing legal to play
+        if (this.passStuckPlayers()) {
+            this.checkForAITurn();
+        }
+        this.updateUI();
     }
 
     setupPlayerConfig() {
@@ -107,6 +111,8 @@ class ChineseCheckersGame {
             const boardPosition = playerPositions[i];
             this.playerHomes[i] = this.getStartingPieces(boardPosition);
             this.playerDestinations[i] = this.getStartingPieces((boardPosition + 3) % 6);
+            const fromCenter = c => Math.max(Math.abs(c.q), Math.abs(c.r), Math.abs(c.q + c.r));
+            this.playerGoalTips[i] = this.playerDestinations[i].reduce((far, c) => (fromCenter(c) > fromCenter(far) ? c : far));
         }
     }
 
@@ -277,7 +283,10 @@ class ChineseCheckersGame {
     updateUI() {
         const name = this.playerNames && this.playerNames[this.currentPlayerIndex] ? this.playerNames[this.currentPlayerIndex] : this.PLAYER_NAMES[this.currentPlayerIndex];
         const colorIndex = this.playerColors && this.playerColors[this.currentPlayerIndex] !== undefined ? this.playerColors[this.currentPlayerIndex] : this.currentPlayerIndex;
-        if (this.gameOver) {
+        if (this.isDraw) {
+            this.statusTextEl.textContent = "It's a draw!";
+            this.endTurnBtn.style.visibility = 'hidden';
+        } else if (this.gameOver) {
             const winnerIdx = (this.currentPlayerIndex + this.activePlayers.length - 1) % this.activePlayers.length;
             const winnerName = this.playerNames && this.playerNames[winnerIdx] ? this.playerNames[winnerIdx] : this.PLAYER_NAMES[winnerIdx];
             this.statusTextEl.textContent = `${winnerName} wins!`;
@@ -329,9 +338,22 @@ class ChineseCheckersGame {
         this.render();
     }
 
+    // Row along the player's home-to-destination axis: higher is further forward.
+    // Every move between two holes in the same row is sideways.
+    getForwardRow(coord, player) {
+        const tip = this.playerGoalTips[player];
+        return coord.q * tip.q + coord.r * tip.r + (coord.q + coord.r) * (tip.q + tip.r);
+    }
+
+    // House rule: pieces never move backward. Sideways stays legal, because a piece
+    // on the row in front of the destination may have to slide along it to get in.
+    isBackward(from, to, player) {
+        return this.getForwardRow(to, player) < this.getForwardRow(from, player);
+    }
+
     calculateValidMoves(q, r) {
         this.validMoves = [];
-        this.jumpParents = new Map(); // landing hole -> hole it was jumped from (to rebuild chain paths)
+        const player = this.currentPlayerIndex;
         // A piece may not land on any hole it already touched this turn
         // (including where it started), so it can't hop back and forth.
         const visited = new Set([...this.turnVisited, this.coordToString({ q, r })]);
@@ -339,27 +361,28 @@ class ChineseCheckersGame {
         if (this.turnState === 'select') {
             for (let i = 0; i < 6; i++) {
                 const neighbor = this.getNeighbor(q, r, i);
-                if (this.validBoardCoords.has(this.coordToString(neighbor)) && !this.board.has(this.coordToString(neighbor))) {
+                if (this.validBoardCoords.has(this.coordToString(neighbor)) && !this.board.has(this.coordToString(neighbor)) && !this.isBackward({ q, r }, neighbor, player)) {
                     this.validMoves.push(neighbor);
                 }
             }
         }
-        this.findJumps(q, r, visited);
+        this.validMoves.push(...this.getJumpTargets(q, r, visited));
     }
 
-    findJumps(q, r, visited) {
+    // One hop only: over one adjacent piece into the empty hole directly beyond it.
+    // Chains are played a hop at a time, so every hop can be seen on the board.
+    getJumpTargets(q, r, visited) {
+        const targets = [];
         for (let i = 0; i < 6; i++) {
             const neighbor = this.getNeighbor(q, r, i);
             const jumpTo = this.getNeighbor(neighbor.q, neighbor.r, i);
             const jumpToStr = this.coordToString(jumpTo);
 
-            if (this.validBoardCoords.has(jumpToStr) && this.board.has(this.coordToString(neighbor)) && !this.board.has(jumpToStr) && !visited.has(jumpToStr)) {
-                this.validMoves.push(jumpTo);
-                visited.add(jumpToStr);
-                this.jumpParents.set(jumpToStr, this.coordToString({ q, r }));
-                this.findJumps(jumpTo.q, jumpTo.r, visited);
+            if (this.validBoardCoords.has(jumpToStr) && this.board.has(this.coordToString(neighbor)) && !this.board.has(jumpToStr) && !visited.has(jumpToStr) && !this.isBackward({ q, r }, jumpTo, this.currentPlayerIndex)) {
+                targets.push(jumpTo);
             }
         }
+        return targets;
     }
 
     movePiece(from, to) {
@@ -373,11 +396,8 @@ class ChineseCheckersGame {
         const dy = to.r - from.r;
         const isJump = Math.abs(dx) > 1 || Math.abs(dy) > 1 || Math.abs(dx + dy) > 1;
 
-        // Record every hole this move touched, including the middle of a multi-hop chain
         this.turnVisited.add(fromStr);
-        for (let hole = toStr; hole && hole !== fromStr; hole = this.jumpParents.get(hole)) {
-            this.turnVisited.add(hole);
-        }
+        this.turnVisited.add(toStr);
 
         this.selectedPiece = null;
         this.validMoves = [];
@@ -419,6 +439,11 @@ class ChineseCheckersGame {
     }
 
     endTurn() {
+        this.selectedPiece = null;
+        this.validMoves = [];
+        this.turnState = 'select';
+        this.turnVisited = new Set(); // holes the moving piece has touched this turn
+
         if (this.checkWin(this.currentPlayerIndex)) {
             this.gameOver = true;
             clearSavedGame();
@@ -431,25 +456,54 @@ class ChineseCheckersGame {
             }, 500);
         } else {
             this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.activePlayers.length;
-            const newPlayerName = this.playerNames && this.playerNames[this.currentPlayerIndex] 
-                ? this.playerNames[this.currentPlayerIndex] 
-                : this.PLAYER_NAMES[this.currentPlayerIndex];
-            showNotification(`${newPlayerName}'s turn`, 'info', 2000);
 
             // The turn changes here, so input is unblocked here too (checkForAITurn
             // blocks it again if the next player is an AI). Waiting for the previous
             // AI's promise instead left taps ignored for a moment after AI step moves.
             this.isAITurn = false;
             this.endTurnBtn.disabled = false;
-            this.saveGame();
-            this.checkForAITurn();
+            if (this.passStuckPlayers()) {
+                const newPlayerName = this.playerNames && this.playerNames[this.currentPlayerIndex] 
+                    ? this.playerNames[this.currentPlayerIndex] 
+                    : this.PLAYER_NAMES[this.currentPlayerIndex];
+                showNotification(`${newPlayerName}'s turn`, 'info', 2000);
+                this.saveGame();
+                this.checkForAITurn();
+            }
         }
-        this.selectedPiece = null;
-        this.validMoves = [];
-        this.turnState = 'select';
-        this.turnVisited = new Set(); // holes the moving piece has touched this turn
         this.updateUI();
         this.render();
+    }
+
+    // Forward-only movement can leave a player with nothing legal to play. They pass,
+    // or a human would be stuck with no move and no End Turn button.
+    // Returns false if nobody can move, which ends the game in a draw.
+    passStuckPlayers() {
+        for (let passes = 0; passes < this.activePlayers.length; passes++) {
+            if (this.hasLegalMove()) return true;
+            const name = this.playerNames && this.playerNames[this.currentPlayerIndex]
+                ? this.playerNames[this.currentPlayerIndex]
+                : this.PLAYER_NAMES[this.currentPlayerIndex];
+            showNotification(`${name} has no legal moves and passes`, 'warning', 2000);
+            this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.activePlayers.length;
+        }
+        this.gameOver = true;
+        this.isDraw = true;
+        clearSavedGame();
+        showNotification('No one can move. The game is a draw.', 'warning', 5000);
+        return false;
+    }
+
+    hasLegalMove() {
+        for (const [coordStr, piece] of this.board) {
+            if (piece.player !== this.currentPlayerIndex) continue;
+            const { q, r } = this.stringToCoord(coordStr);
+            this.calculateValidMoves(q, r);
+            const canMove = this.validMoves.length > 0;
+            this.validMoves = [];
+            if (canMove) return true;
+        }
+        return false;
     }
 
     /**
@@ -475,11 +529,12 @@ class ChineseCheckersGame {
         }
     }
 
+    // Anti-blocking: an opponent's piece in the destination counts as filled, as long
+    // as the player has a piece there too. With no backward moves, a piece left behind
+    // in the destination could otherwise never be freed and nobody could finish.
     checkWin(playerIndex) {
-        return this.playerDestinations[playerIndex].every(coord => {
-            const piece = this.board.get(this.coordToString(coord));
-            return piece && piece.player === playerIndex;
-        });
+        const pieces = this.playerDestinations[playerIndex].map(coord => this.board.get(this.coordToString(coord)));
+        return pieces.every(Boolean) && pieces.some(piece => piece.player === playerIndex);
     }
 }
 

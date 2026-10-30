@@ -32,10 +32,11 @@ Chinese Checkers is a strategy board game where each player tries to move all th
 
 ### 📏 Rules
 
-- Move one space in any direction to an empty spot
-- Jump over adjacent pieces to move faster
-- Multiple jumps are allowed in a single turn
-- First player to move all pieces to their destination wins
+- Move one space forward or sideways to an empty spot (house rule: no moving backward)
+- Jump over one adjacent piece into the empty spot directly beyond it
+- Keep jumping in the same turn, one hop at a time, or end your turn
+- If you have no legal move, your turn is passed
+- First player to fill their destination wins. Opponent pieces stuck there count as filled, as long as you have at least one piece there
 
 ## 🚀 Quick Start
 

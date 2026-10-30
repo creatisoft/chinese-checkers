@@ -117,9 +117,13 @@ class ChineseCheckersAI {
                 const newDist = this.getDistanceToGoal(move, destination);
                 score += (currentDist - newDist) * 10;
 
-                // Bonus for jump moves
+                score += this.openHoleScore(piece, move, destination, 10);
+
+                // Bonus for jump moves that progress, plus the chain they open up
                 if (this.isJumpMove(piece, move)) {
-                    score += 5;
+                    const chain = this.chainGain(move, destination, this.chainVisited(piece, move));
+                    if (currentDist - newDist + chain > 0) score += 5;
+                    score += chain * 10;
                 }
 
                 score += this.destinationEntryScore(piece, move, destination, 15);
@@ -159,12 +163,14 @@ class ChineseCheckersAI {
                 const newDist = this.getDistanceToGoal(move, destination);
                 score += (currentDist - newDist) * 15;
                 
+                score += this.openHoleScore(piece, move, destination, 15);
+
                 // Jump chain potential
                 if (this.isJumpMove(piece, move)) {
-                    score += 8;
-                    // Check for additional jump potential
-                    const continuingJumps = this.getValidMovesForPiece(move).filter(m => this.isJumpMove(move, m));
-                    score += continuingJumps.length * 3;
+                    // Chains are played a hop at a time, so count where this hop can lead
+                    const chain = this.chainGain(move, destination, this.chainVisited(piece, move));
+                    if (currentDist - newDist + chain > 0) score += 8;
+                    score += chain * 15;
                 }
                 
                 score += this.destinationEntryScore(piece, move, destination, 20);
@@ -213,7 +219,7 @@ class ChineseCheckersAI {
         if (this.game.currentPlayerIndex !== seat || this.game.gameOver) return;
 
         // If it was a jump and AI can continue jumping, decide whether to continue
-        if (this.game.turnState === 'jumping' && this.shouldContinueJumping(move.to, jumpCount)) {
+        if (this.game.turnState === 'jumping' && this.shouldContinueJumping(move.to)) {
             const nextMove = this.findBestContinuationJump(move.to);
             if (nextMove) {
                 await this.sleep(500); // Brief pause before continuing
@@ -230,38 +236,16 @@ class ChineseCheckersAI {
     }
 
     /**
-     * Decide if AI should continue jumping
+     * Decide if AI should continue jumping. It only ever continues along a chain
+     * that gets it closer to the goal, never just because a jump is available.
      */
-    shouldContinueJumping(position, jumpCount = 0) {
-        const jumps = this.getValidMovesForPiece(position).filter(move => 
-            this.isJumpMove(position, move)
-        );
-        
-        if (jumps.length === 0) return false;
-        
-        // Difficulty-based decision making with jump count consideration
+    shouldContinueJumping(position) {
+        if (this.getProgressingJumps(position).length === 0) return false;
+
         switch (this.difficulty) {
             case 'easy': return Math.random() < 0.4; // 40% chance to continue
             case 'medium': return Math.random() < 0.7; // 70% chance to continue
-            case 'hard': {
-                // Hard AI is smart about when to continue jumping
-                // Stop after 3 jumps to prevent infinite loops (reduced from 5)
-                if (jumpCount >= 3) return false;
-                
-                // Always continue if there's significant progress toward goal
-                const currentPlayer = this.game.activePlayers[this.game.currentPlayerIndex];
-                const destination = this.game.playerDestinations[currentPlayer];
-                const currentDist = this.getDistanceToGoal(position, destination);
-                
-                // Check if any jump makes significant progress
-                const bestJumpProgress = Math.max(...jumps.map(jump => {
-                    const newDist = this.getDistanceToGoal(jump, destination);
-                    return currentDist - newDist;
-                }));
-                
-                // Continue if making good progress (distance reduction >= 1) or randomly 60% of the time (reduced from 80%)
-                return bestJumpProgress >= 1 || Math.random() < 0.6;
-            }
+            case 'hard': return true;
             default: return Math.random() < 0.6;
         }
     }
@@ -270,30 +254,57 @@ class ChineseCheckersAI {
      * Find best continuation jump from current position
      */
     findBestContinuationJump(position) {
-        const currentPlayer = this.game.activePlayers[this.game.currentPlayerIndex];
-        const destination = this.game.playerDestinations[currentPlayer];
-        const jumps = this.getValidMovesForPiece(position).filter(move => 
-            this.isJumpMove(position, move)
-        );
-        
-        if (jumps.length === 0) return null;
-        
-        // Find the jump that makes most progress toward destination
         let bestJump = null;
         let bestScore = -Infinity;
-        
-        for (const jump of jumps) {
-            const currentDist = this.getDistanceToGoal(position, destination);
-            const newDist = this.getDistanceToGoal(jump, destination);
-            const score = currentDist - newDist;
-            
-            if (score > bestScore) {
-                bestScore = score;
+
+        for (const { jump, gain } of this.getProgressingJumps(position)) {
+            if (gain > bestScore) {
+                bestScore = gain;
                 bestJump = jump;
             }
         }
-        
+
         return bestJump;
+    }
+
+    /**
+     * Jumps available from the current position whose chain ends closer to the goal
+     */
+    getProgressingJumps(position) {
+        const currentPlayer = this.game.activePlayers[this.game.currentPlayerIndex];
+        const destination = this.game.playerDestinations[currentPlayer];
+        const currentDist = this.getDistanceToGoal(position, destination);
+
+        return this.getValidMovesForPiece(position)
+            .filter(jump => this.isJumpMove(position, jump))
+            .map(jump => {
+                const hopGain = currentDist - this.getDistanceToGoal(jump, destination);
+                const visited = this.chainVisited(position, jump);
+                return { jump, gain: hopGain + this.chainGain(jump, destination, visited) };
+            })
+            .filter(({ gain }) => gain > 0);
+    }
+
+    /**
+     * Holes a chain may not land on after hopping from one hole to the next
+     */
+    chainVisited(from, to) {
+        const coords = [from, to].map(c => this.game.coordToString(c));
+        return new Set([...this.game.turnVisited, ...coords]);
+    }
+
+    /**
+     * Most progress toward the goal available by continuing to hop from a position.
+     * Holes stay in `visited` once tried, which keeps the search small on crowded boards.
+     */
+    chainGain(position, destination, visited) {
+        let best = 0;
+        for (const landing of this.game.getJumpTargets(position.q, position.r, visited)) {
+            visited.add(this.game.coordToString(landing));
+            const hopGain = this.getDistanceToGoal(position, destination) - this.getDistanceToGoal(landing, destination);
+            best = Math.max(best, hopGain + this.chainGain(landing, destination, visited));
+        }
+        return best;
     }
 
     /**
@@ -374,6 +385,19 @@ class ChineseCheckersAI {
         if (!wasIn && isIn) return bonus;
         if (wasIn && !isIn) return -bonus * 2;
         return 0;
+    }
+
+    /**
+     * Reward a piece outside the destination for closing on a hole it can still fill.
+     * Sliding along the row in front of the triangle gains nothing toward the far tip,
+     * so without this the last piece could sit next to the triangle and never go in.
+     */
+    openHoleScore(from, to, destination, weight) {
+        if (this.isInDestination(from, destination)) return 0;
+        const openHoles = destination.filter(hole => !this.game.board.has(this.game.coordToString(hole)));
+        if (openHoles.length === 0) return 0;
+        const nearest = position => Math.min(...openHoles.map(hole => this.hexDistance(position, hole)));
+        return (nearest(from) - nearest(to)) * weight;
     }
 
     /**
